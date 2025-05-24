@@ -22,8 +22,7 @@ Generate videos of conversations between multiple AI models (Claude, ChatGPT, Ge
    - Add your API keys:
      ```
      OPENAI_API_KEY=your_openai_api_key_here
-     ANTHROPIC_API_KEY=your_anthropic_api_key_here
-     GOOGLE_API_KEY=your_google_api_key_here
+     OPENROUTER_API_KEY=your_openrouter_api_key_here
      ```
 
 3. **Run the Generator**
@@ -54,7 +53,7 @@ The generator creates:
 
 - Python 3.8+
 - OpenAI API key (required for TTS)
-- Optional: Anthropic, Google AI API keys for more AI participants
+- OpenRouter API Key
 - FFmpeg (for video processing)
 
 ## File Structure
