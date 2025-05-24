@@ -1,148 +1,228 @@
-try:
-    from moviepy import AudioFileClip, ImageClip, CompositeVideoClip
-except ImportError:
-    print("Warning: MoviePy not properly installed. Video generation may not work.")
-    # Fallback classes to prevent import errors
-    class AudioFileClip:
-        def __init__(self, *args, **kwargs): pass
-        def close(self): pass
-        @property
-        def duration(self): return 10.0
-    
-    class ImageClip:
-        def __init__(self, *args, **kwargs): pass
-        def set_start(self, time): return self
-        def set_duration(self, duration): return self
-    
-    class CompositeVideoClip:
-        def __init__(self, *args, **kwargs): pass
-        def set_duration(self, duration): return self
-        def set_audio(self, audio): return self
-        def write_videofile(self, *args, **kwargs): pass
-        def close(self): pass
-
+from moviepy import AudioFileClip, ImageClip, CompositeVideoClip
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import os
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 1920, height: int = 1080):
-        self.width = width
+    def __init__(self, width: int = 1920, height: int = 1080, fps: int = 24):
+        self.width  = width
         self.height = height
-        self.fps = 24
-        
+        self.fps    = fps
+        self._visual_cache = {}  # Cache for generated speaker visuals
+
     def create_speaker_visual(self, speaker_name: str, is_speaking: bool = False) -> np.ndarray:
-        """Create a visual representation for each speaker"""
-        # Create a simple colored background with speaker name
-        img = Image.new('RGB', (self.width, self.height), color='black')
+        """Load and display the corresponding PNG image for each speaker."""
+        # Check cache first
+        cache_key = (speaker_name, is_speaking)
+        if cache_key in self._visual_cache:
+            return self._visual_cache[cache_key]
+        
+        # Map speaker names to image files
+        image_path = f"images/{speaker_name.lower()}.png"
+        
+        # Check if the image file exists
+        if os.path.exists(image_path):
+            try:
+                # Load the speaker's image
+                img = Image.open(image_path).convert('RGBA')
+                
+                # Resize image to fit the video dimensions while maintaining aspect ratio
+                img.thumbnail((self.width, self.height), Image.Resampling.LANCZOS)
+                
+                # Create a background canvas
+                canvas = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 255))
+                
+                # Center the image on the canvas
+                x = (self.width - img.width) // 2
+                y = (self.height - img.height) // 2
+                canvas.paste(img, (x, y), img)
+                
+                result = np.array(canvas.convert('RGB'))
+                self._visual_cache[cache_key] = result
+                return result
+                
+            except Exception as e:
+                print(f"Error loading image for {speaker_name}: {e}")
+                # Fall back to creating a simple colored background with text
+                result = self._create_fallback_visual(speaker_name, is_speaking)
+                self._visual_cache[cache_key] = result
+                return result
+        else:
+            print(f"Image not found: {image_path}, using fallback visual")
+            result = self._create_fallback_visual(speaker_name, is_speaking)
+            self._visual_cache[cache_key] = result
+            return result
+
+    def _create_fallback_visual(self, speaker_name: str, is_speaking: bool = False) -> np.ndarray:
+        """Create a simple fallback visual when image is not available."""
+        # Check if we already have this cached (in case called directly)
+        cache_key = (speaker_name, is_speaking)
+        if cache_key in self._visual_cache:
+            return self._visual_cache[cache_key]
+            
+        img = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 255))
         draw = ImageDraw.Draw(img)
-        
-        # Color scheme for different AIs
-        colors = {
-            'Claude': '#FF6B6B' if is_speaking else '#FF6B6B80',
-            'ChatGPT': '#4ECDC4' if is_speaking else '#4ECDC480',
-            'Gemini': '#45B7D1' if is_speaking else '#45B7D180',
-            'DeepSeek': '#96CEB4' if is_speaking else '#96CEB480',
-            'Narrator': '#FFEAA7' if is_speaking else '#FFEAA780'
+
+        # Color schemes
+        base_colors = {
+            'Claude':   (0xFF, 0x6B, 0x6B),
+            'ChatGPT':  (0x4E, 0xCC, 0xDC),
+            'Gemini':   (0x45, 0xB7, 0xD1),
+            'DeepSeek': (0x96, 0xCE, 0xB4),
+            'Narrator': (0xFF, 0xEA, 0xA7),
         }
-        
-        color = colors.get(speaker_name, '#FFFFFF' if is_speaking else '#FFFFFF80')
-        
-        # Draw background gradient effect
-        for y in range(self.height):
-            alpha = int(255 * (1 - y / self.height) * 0.3)
-            gradient_color = color + format(alpha, '02x') if len(color) == 7 else color
-            draw.line([(0, y), (self.width, y)], fill=gradient_color)
-        
-        # Add speaker name
+        r, g, b = base_colors.get(speaker_name, (0xCC, 0xCC, 0xCC))
+        alpha = 255 if is_speaking else 128
+        fill  = (r, g, b, alpha)
+
+        # Draw background
+        draw.rectangle([(0, 0), (self.width, self.height)], fill=fill)
+
+        # Speaker name text
+        font_size = 120 if is_speaking else 80
         try:
-            # Try to use a nice font
-            font_size = 120 if is_speaking else 80
             font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", font_size)
-        except:
-            # Fallback to default font
+        except IOError:
             font = ImageFont.load_default()
-        
-        # Center the text
+        # Get text width/height using textbbox (Pillow ≥ 8.0)
         bbox = draw.textbbox((0, 0), speaker_name, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (self.width - text_width) // 2
-        y = (self.height - text_height) // 2
-        
-        text_color = 'white' if is_speaking else '#CCCCCC'
-        draw.text((x, y), speaker_name, fill=text_color, font=font)
-        
-        # Add speaking indicator
-        if is_speaking:
-            # Draw animated-style border
-            border_width = 10
-            draw.rectangle([border_width//2, border_width//2, 
-                          self.width-border_width//2, self.height-border_width//2], 
-                         outline=color, width=border_width)
-        
-        return np.array(img)
-    
-    def create_video_from_conversation(self, conversation: List[Dict], audio_file: str, output_file: str):
-        """Create video with synchronized audio and visuals"""
-        try:
-            # Load the audio to get duration information
-            audio_clip = AudioFileClip(audio_file)
+        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        x = (self.width  - text_w)  // 2
+        y = (self.height - text_h) // 2
+        draw.text((x, y), speaker_name, font=font, fill=(255,255,255,255))
+
+        result = np.array(img.convert('RGB'))
+        self._visual_cache[cache_key] = result
+        return result
+
+    def create_conversation_video(
+        self,
+        conversation: List[Dict[str, str]],
+        audio_file: str,
+        output_file: str,
+        individual_audio_segments: List = None
+    ):
+        """Alias wrapper for create_video_from_conversation."""
+        return self.create_video_from_conversation(conversation, audio_file, output_file, individual_audio_segments)
+
+    def create_video_from_conversation(
+        self,
+        conversation: List[Dict[str, str]],
+        audio_file: str,
+        output_file: str,
+        individual_audio_segments: List = None
+    ):
+        """Render a conversation to a video with synchronized audio."""
+        # Verify audio file exists
+        if not os.path.exists(audio_file):
+            raise FileNotFoundError(f"Audio file not found: {audio_file}")
             
-            # Calculate timing for each speaker segment
-            clips = []
-            current_time = 0
-            
-            # Estimate duration per segment (you might want to make this more precise)
-            total_segments = len(conversation)
-            segment_duration = audio_clip.duration / total_segments
+        # Load the combined audio for the video track
+        audio = AudioFileClip(audio_file)
+        total_duration = audio.duration
+
+        clips = []
+        t_start = 0.0
+
+        # Use individual audio segments for precise timing if provided
+        if individual_audio_segments and len(individual_audio_segments) == len(conversation):
+            print("Using individual audio segments for precise speaker timing...")
+            for i, entry in enumerate(conversation):
+                speaker = entry['speaker']
+                # Get duration from the actual individual audio segment
+                segment_duration = len(individual_audio_segments[i]) / 1000.0  # Convert ms to seconds
+                
+                frame = self.create_speaker_visual(speaker, is_speaking=True)
+                img_clip = (
+                    ImageClip(frame)
+                    .with_duration(segment_duration)
+                    .with_start(t_start)
+                )
+                clips.append(img_clip)
+                t_start += segment_duration
+        else:
+            # Fallback to equal duration segments
+            print("Using equal duration segments for speaker timing...")
+            num_segments = len(conversation)
+            seg_dur = total_duration / num_segments
             
             for entry in conversation:
-                speaker = entry["speaker"]
-                
-                # Create visual for this speaker
-                img_array = self.create_speaker_visual(speaker, is_speaking=True)
-                
-                # Create video clip for this segment
-                img_clip = ImageClip(img_array, duration=segment_duration)
-                img_clip = img_clip.set_start(current_time)
-                
+                speaker = entry['speaker']
+                frame = self.create_speaker_visual(speaker, is_speaking=True)
+                img_clip = (
+                    ImageClip(frame)
+                    .with_duration(seg_dur)
+                    .with_start(t_start)
+                )
                 clips.append(img_clip)
-                current_time += segment_duration
-            
-            # Combine all video clips
-            video = CompositeVideoClip(clips, size=(self.width, self.height))
-            video = video.set_duration(audio_clip.duration)
-            
-            # Add audio
-            final_video = video.set_audio(audio_clip)
-            
-            # Export video
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            final_video.write_videofile(
+                t_start += seg_dur
+
+        # Composite video and add the combined audio
+        video = CompositeVideoClip(clips, size=(self.width, self.height))
+        final = video.with_duration(total_duration).with_audio(audio)
+
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+        # Write the file
+        print(f"Writing video with audio from: {audio_file}")
+        
+        # Check if audio file exists and has content
+        if not os.path.exists(audio_file):
+            print(f"Warning: Audio file not found: {audio_file}")
+        else:
+            print(f"Audio file found: {audio_file}, duration: {audio.duration:.2f} seconds")
+        
+        try:
+            final.write_videofile(
                 output_file,
                 fps=self.fps,
-                codec='libx264',
                 audio_codec='aac',
+                codec='libx264',
                 temp_audiofile='temp-audio.m4a',
-                remove_temp=True
+                remove_temp=True,
+                threads = 4
             )
-            
-            print(f"Video saved to {output_file}")
-            
-            # Clean up
-            audio_clip.close()
-            video.close()
-            final_video.close()
-            
         except Exception as e:
-            print(f"Error creating video: {e}")
-            print("This might be due to missing FFmpeg or MoviePy installation issues.")
-    
-    def create_waveform_video(self, conversation: List[Dict], audio_file: str, output_file: str):
-        """Alternative: Create video with waveform visualization"""
-        # This would create a more dynamic video with audio waveform
-        # Implementation would involve analyzing audio levels and creating animated waveforms
-        print("Waveform video generation not yet implemented")
-        print(f"Would create waveform video for {len(conversation)} segments from {audio_file} to {output_file}")
+            print(f"Error during video creation: {e}")
+            # Try fallback without custom audio codec
+            print("Attempting fallback video creation...")
+            try:
+                final.write_videofile(
+                    output_file,
+                    fps=self.fps,
+                    codec='libx264',
+                    temp_audiofile='temp-audio.m4a',
+                    remove_temp=True
+                )
+            except Exception as e2:
+                print(f"Fallback video creation also failed: {e2}")
+                raise
+
+        # Cleanup
+        audio.close()
+        video.close()
+        final.close()
+        print(f"Video with audio successfully created: {output_file}")
+
+    def create_waveform_video(
+        self,
+        conversation: List[Dict[str, str]],
+        audio_file: str,
+        output_file: str
+    ):
+        """Alternative: stub for waveform‐based visuals."""
+        print("Waveform video generation not implemented.")
+        print(f"Would create waveform video for {len(conversation)} segments, audio={audio_file}, output={output_file}")
+
+# Example usage
+if __name__ == "__main__":
+    convo = [
+        {"speaker": "Claude",   "text": "Hello, I'm Claude."},
+        {"speaker": "ChatGPT",  "text": "And I'm ChatGPT."},
+        {"speaker": "DeepSeek", "text": "DeepSeek checking in."},
+    ]
+    vg = VideoGenerator()
+    vg.create_conversation_video(convo, "dialogue.mp3", "out/video.mp4")

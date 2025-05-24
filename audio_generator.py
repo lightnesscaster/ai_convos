@@ -1,11 +1,3 @@
-# Import audioop-lts to provide missing audioop functionality for pydub
-try:
-    import audioop
-except ImportError:
-    import audioop_lts as audioop
-    import sys
-    sys.modules['audioop'] = audioop
-
 from openai import OpenAI
 import os
 from typing import List, Dict
@@ -14,7 +6,18 @@ import io
 
 class AudioGenerator:
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        # Get API key directly from shell environment (no dotenv)
+        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Debug: Print what we're getting (masked for security)
+        if self.openai_api_key:
+            print(f"OpenAI API key loaded from environment: {self.openai_api_key[:10]}...{self.openai_api_key[-4:] if len(self.openai_api_key) > 14 else '[too short]'}")
+        else:
+            print("Warning: No OpenAI API key found in shell environment variables")
+            print("Make sure OPENAI_API_KEY is set in your shell")
+        
+        self.client = OpenAI(api_key=self.openai_api_key)
+        self.temp_audio_dir = "temp_audio"  # Temporary directory for individual files
         self.voice_mapping = {
             "calm and measured": "nova",
             "clear and professional": "alloy", 
@@ -22,6 +25,9 @@ class AudioGenerator:
             "confident and direct": "fable",
             "authoritative and welcoming": "onyx"
         }
+        
+        # Create temp directory if it doesn't exist
+        os.makedirs(self.temp_audio_dir, exist_ok=True)
     
     def text_to_speech(self, text: str, voice_style: str = "alloy") -> AudioSegment:
         """Convert text to speech using OpenAI TTS-1-HD"""
@@ -71,8 +77,96 @@ class AudioGenerator:
         
         return combined_audio
     
-    def save_audio(self, audio: AudioSegment, filename: str):
-        """Save audio to file"""
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        audio.export(filename, format="mp3")
-        print(f"Audio saved to {filename}")
+    def generate_speech(self, text: str, voice_id: str = "alloy") -> AudioSegment:
+        """Generate speech from text using OpenAI TTS"""
+        try:
+            if not self.openai_api_key or self.openai_api_key.startswith('your_'):
+                print(f"Warning: Invalid or missing OpenAI API key. Skipping audio generation.")
+                return None
+                
+            response = self.client.audio.speech.create(
+                model="tts-1",
+                voice=voice_id,
+                input=text
+            )
+            
+            # Convert to AudioSegment
+            audio_data = io.BytesIO(response.content)
+            audio_segment = AudioSegment.from_mp3(audio_data)
+            return audio_segment
+            
+        except Exception as e:
+            print(f"Error generating speech: {e}")
+            return None
+
+    def generate_audio_for_speaker(self, content: str, speaker: str, voice_style: str) -> AudioSegment:
+        """Generate audio for a specific speaker with their voice style"""
+        try:
+            if not self.openai_api_key or self.openai_api_key.startswith('your_'):
+                print(f"Warning: Invalid or missing OpenAI API key. Skipping audio generation for {speaker}.")
+                return None
+            
+            # Map voice style to OpenAI voice
+            voice = self.voice_mapping.get(voice_style, "alloy")
+            
+            # Generate speech
+            response = self.client.audio.speech.create(
+                model="tts-1-hd",
+                voice=voice,
+                input=content,
+                speed=1.0
+            )
+            
+            # Convert to AudioSegment
+            audio_data = io.BytesIO(response.content)
+            audio_segment = AudioSegment.from_mp3(audio_data)
+            return audio_segment
+            
+        except Exception as e:
+            print(f"Error generating speech for {speaker}: {e}")
+            return None
+
+    def save_audio(self, audio: AudioSegment, filename: str, is_final: bool = False):
+        """Save audio to file with error handling"""
+        if audio is None:
+            print(f"Warning: No audio to save for {filename}")
+            return None
+        
+        # Use temp directory for individual files, main directory for final files
+        if not is_final:
+            filename = os.path.join(self.temp_audio_dir, os.path.basename(filename))
+            
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
+            # Export with specific settings for better compatibility
+            audio.export(
+                filename, 
+                format="mp3",
+                bitrate="192k",
+                parameters=["-ar", "44100", "-ac", "2"]  # Sample rate and stereo
+            )
+            print(f"Audio saved: {filename}")
+            return filename  # Return the actual filename used
+        except FileNotFoundError as e:
+            if 'ffmpeg' in str(e):
+                print(f"Error: ffmpeg not found. Please install ffmpeg to generate audio files.")
+                print(f"On macOS: brew install ffmpeg")
+                print(f"On Ubuntu: sudo apt update && sudo apt install ffmpeg")
+                print(f"On Windows: Download from https://ffmpeg.org/download.html")
+            else:
+                print(f"Error saving audio: {e}")
+        except Exception as e:
+            print(f"Error saving audio: {e}")
+        return None
+    
+    def cleanup_temp_files(self):
+        """Delete all temporary audio files"""
+        try:
+            import shutil
+            if os.path.exists(self.temp_audio_dir):
+                shutil.rmtree(self.temp_audio_dir)
+                print(f"Cleaned up temporary audio files from {self.temp_audio_dir}")
+        except Exception as e:
+            print(f"Warning: Could not clean up temp files: {e}")
