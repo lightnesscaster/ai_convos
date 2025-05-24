@@ -17,7 +17,7 @@ def main():
     
     # Ensure output directories exist
     os.makedirs("output", exist_ok=True)
-    os.makedirs("temp", exist_ok=True)
+    os.makedirs("temp_audio", exist_ok=True)
     
     # Initialize managers
     print("Initializing AI Conversation Manager...")
@@ -54,19 +54,56 @@ def main():
     
     # Generate audio
     print("\nGenerating audio...")
-    audio = audio_generator.generate_conversation_audio(conversation)
-    audio_file = f"output/conversation_{timestamp}.mp3"
-    audio_generator.save_audio(audio, audio_file)
+    audio_segments = []
     
-    # Generate video
-    print("\nGenerating video...")
-    video_file = f"output/conversation_{timestamp}.mp4"
-    video_generator.create_video_from_conversation(conversation, audio_file, video_file)
+    for i, turn in enumerate(conversation):
+        print(f"Generating audio for {turn['speaker']}...")
+        
+        audio_file = f"temp_audio/audio_{timestamp}_{i:02d}_{turn['speaker'].lower()}.mp3"
+        
+        audio = audio_generator.generate_audio_for_speaker(
+            turn['content'],
+            turn['speaker'],
+            turn['voice_style']
+        )
+        
+        if audio is not None:
+            audio_segments.append(audio)
+            audio_generator.save_audio(audio, audio_file)
+        else:
+            print(f"Skipping audio for {turn['speaker']} due to generation error")
     
-    print(f"\n✅ Complete! Files generated:")
-    print(f"📝 Transcript: {transcript_file}")
-    print(f"🎵 Audio: {audio_file}")
-    print(f"🎬 Video: {video_file}")
+    # Only proceed with video generation if we have audio
+    if audio_segments:
+        # Combine all audio segments
+        combined_audio = audio_segments[0]
+        for segment in audio_segments[1:]:
+            combined_audio += segment
+        
+        # Save combined audio to output directory (not temp_audio)
+        combined_audio_file = f"output/full_conversation_{timestamp}.mp3"
+        audio_generator.save_audio(combined_audio, combined_audio_file, is_final=True)
+        
+        # Generate video with precise timing from individual segments
+        if combined_audio_file and os.path.exists(combined_audio_file):
+            print("\nGenerating video...")
+            video_file = f"output/conversation_video_{timestamp}.mp4"
+            video_generator.create_conversation_video(
+                conversation, 
+                combined_audio_file, 
+                video_file,
+                individual_audio_segments=audio_segments  # Pass individual segments for timing
+            )
+            print(f"Video generation complete! Saved to: {video_file}")
+            
+            # Clean up temporary audio files after video is created
+            print("\nCleaning up temporary files...")
+            audio_generator.cleanup_temp_files()
+    else:
+        print("\nSkipping video generation - no audio was successfully generated")
+        print("To generate audio and video:")
+        print("1. Set up a valid OpenAI API key in your .env file")
+        print("2. Install ffmpeg (brew install ffmpeg on macOS)")
 
 def generate_custom_conversation(topic: str, num_exchanges: int = 6):
     """Generate a conversation on a custom topic"""
@@ -88,13 +125,33 @@ def generate_custom_conversation(topic: str, num_exchanges: int = 6):
     with open(transcript_file, 'w') as f:
         json.dump(conversation, f, indent=2)
     
-    # Generate audio and video
-    audio = audio_generator.generate_conversation_audio(conversation)
-    audio_file = f"output/conversation_{timestamp}.mp3"
-    audio_generator.save_audio(audio, audio_file)
+    # Generate individual audio segments for precise timing
+    audio_segments = []
+    for turn in conversation:
+        audio = audio_generator.generate_audio_for_speaker(
+            turn['content'],
+            turn['speaker'],
+            turn['voice_style']
+        )
+        if audio is not None:
+            audio_segments.append(audio)
     
-    video_file = f"output/conversation_{timestamp}.mp4"
-    video_generator.create_video_from_conversation(conversation, audio_file, video_file)
+    # Combine audio segments
+    if audio_segments:
+        combined_audio = audio_segments[0]
+        for segment in audio_segments[1:]:
+            combined_audio += segment
+        
+        audio_file = f"output/conversation_{timestamp}.mp3"
+        audio_generator.save_audio(combined_audio, audio_file, is_final=True)
+        
+        video_file = f"output/conversation_{timestamp}.mp4"
+        video_generator.create_video_from_conversation(
+            conversation, 
+            audio_file, 
+            video_file,
+            individual_audio_segments=audio_segments
+        )
     
     return transcript_file, audio_file, video_file
 
