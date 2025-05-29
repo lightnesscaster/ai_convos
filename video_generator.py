@@ -183,7 +183,7 @@ class VideoGenerator:
                 codec='libx264',
                 temp_audiofile='temp-audio.m4a',
                 remove_temp=True,
-                threads = 4
+                threads = 6
             )
         except Exception as e:
             print(f"Error during video creation: {e}")
