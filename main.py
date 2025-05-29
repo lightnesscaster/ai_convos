@@ -11,10 +11,34 @@ from ai_conversation import AIConversationManager
 from audio_generator import AudioGenerator
 from video_generator import VideoGenerator
 import json
+import argparse
 
 def main():
     """Main function to generate AI conversation video"""
     
+    parser = argparse.ArgumentParser(
+        description="Generate an AI Agora conversation"
+    )
+    parser.add_argument("topic", help="Topic to discuss")
+    parser.add_argument(
+        "--num-exchanges",
+        type=int,
+        default=12,
+        help="Number of exchanges between AIs (default: 12)"
+    )
+    parser.add_argument(
+        "--debate",
+        action="store_true",
+        help="Enable debate mode (assign PRO/CON stances)"
+    )
+    parser.add_argument(
+        "--next-topic",
+        type=str,
+        default=None,
+        help="Topic for next week's episode, to be mentioned in the conclusion"
+    )
+    args = parser.parse_args()
+
     # Ensure output directories exist
     os.makedirs("output", exist_ok=True)
     os.makedirs("temp_audio", exist_ok=True)
@@ -39,10 +63,17 @@ def main():
     video_generator = VideoGenerator()
     
     # Generate conversation about ethics in simulated reality
-    topic = "ethics in a simulated reality"
+    topic = args.topic
+    num_exchanges = args.num_exchanges
+    debate_mode = args.debate
     print(f"\nGenerating conversation about: {topic}")
     
-    conversation = conversation_manager.generate_conversation(topic, num_exchanges=6)
+    conversation = conversation_manager.generate_conversation(
+        topic, 
+        num_exchanges=num_exchanges, 
+        debate_mode=debate_mode, 
+        next_topic=args.next_topic
+    )
     
     # Save conversation transcript
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -105,62 +136,5 @@ def main():
         print("1. Set up a valid OpenAI API key in your .env file")
         print("2. Install ffmpeg (brew install ffmpeg on macOS)")
 
-def generate_custom_conversation(topic: str, num_exchanges: int = 6):
-    """Generate a conversation on a custom topic"""
-    conversation_manager = AIConversationManager()
-    audio_generator = AudioGenerator()
-    video_generator = VideoGenerator()
-    
-    # Ensure output directories exist
-    os.makedirs("output", exist_ok=True)
-    os.makedirs("temp", exist_ok=True)
-    
-    print(f"Generating conversation about: {topic}")
-    conversation = conversation_manager.generate_conversation(topic, num_exchanges)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Save transcript
-    transcript_file = f"output/conversation_{timestamp}.json"
-    with open(transcript_file, 'w') as f:
-        json.dump(conversation, f, indent=2)
-    
-    # Generate individual audio segments for precise timing
-    audio_segments = []
-    for turn in conversation:
-        audio = audio_generator.generate_audio_for_speaker(
-            turn['content'],
-            turn['speaker'],
-            turn['voice_style']
-        )
-        if audio is not None:
-            audio_segments.append(audio)
-    
-    # Combine audio segments
-    if audio_segments:
-        combined_audio = audio_segments[0]
-        for segment in audio_segments[1:]:
-            combined_audio += segment
-        
-        audio_file = f"output/conversation_{timestamp}.mp3"
-        audio_generator.save_audio(combined_audio, audio_file, is_final=True)
-        
-        video_file = f"output/conversation_{timestamp}.mp4"
-        video_generator.create_video_from_conversation(
-            conversation, 
-            audio_file, 
-            video_file,
-            individual_audio_segments=audio_segments
-        )
-    
-    return transcript_file, audio_file, video_file
-
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # Custom topic provided
-        topic = " ".join(sys.argv[1:])
-        num_exchanges = 6
-        generate_custom_conversation(topic, num_exchanges)
-    else:
-        # Default conversation
-        main()
+    main()
