@@ -5,11 +5,12 @@ import os
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 1920, height: int = 1080, fps: int = 24):
+    def __init__(self, width: int = 640, height: int = 480, fps: int = 4):
         self.width  = width
         self.height = height
         self.fps    = fps
         self._visual_cache = {}  # Cache for generated speaker visuals
+        self._clip_cache = {}    # Cache for ImageClip objects per speaker
 
     def create_speaker_visual(self, speaker_name: str, is_speaking: bool = False) -> np.ndarray:
         """Load and display the corresponding PNG image for each speaker."""
@@ -97,6 +98,13 @@ class VideoGenerator:
         self._visual_cache[cache_key] = result
         return result
 
+    def _get_speaker_clip(self, speaker_name: str) -> ImageClip:
+        """Get or create a cached ImageClip for the speaker."""
+        if speaker_name not in self._clip_cache:
+            frame = self.create_speaker_visual(speaker_name, is_speaking=True)
+            self._clip_cache[speaker_name] = ImageClip(frame)
+        return self._clip_cache[speaker_name]
+
     def create_conversation_video(
         self,
         conversation: List[Dict[str, str]],
@@ -134,12 +142,8 @@ class VideoGenerator:
                 # Get duration from the actual individual audio segment
                 segment_duration = len(individual_audio_segments[i]) / 1000.0  # Convert ms to seconds
                 
-                frame = self.create_speaker_visual(speaker, is_speaking=True)
-                img_clip = (
-                    ImageClip(frame)
-                    .with_duration(segment_duration)
-                    .with_start(t_start)
-                )
+                base_clip = self._get_speaker_clip(speaker)
+                img_clip = base_clip.with_duration(segment_duration).with_start(t_start)
                 clips.append(img_clip)
                 t_start += segment_duration
         else:
@@ -150,12 +154,8 @@ class VideoGenerator:
             
             for entry in conversation:
                 speaker = entry['speaker']
-                frame = self.create_speaker_visual(speaker, is_speaking=True)
-                img_clip = (
-                    ImageClip(frame)
-                    .with_duration(seg_dur)
-                    .with_start(t_start)
-                )
+                base_clip = self._get_speaker_clip(speaker)
+                img_clip = base_clip.with_duration(seg_dur).with_start(t_start)
                 clips.append(img_clip)
                 t_start += seg_dur
 
@@ -205,6 +205,10 @@ class VideoGenerator:
         audio.close()
         video.close()
         final.close()
+        # Clean up cached clips
+        for clip in self._clip_cache.values():
+            clip.close()
+        self._clip_cache.clear()
         print(f"Video with audio successfully created: {output_file}")
 
     def create_waveform_video(
