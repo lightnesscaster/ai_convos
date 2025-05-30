@@ -78,8 +78,8 @@ class AIConversationManager:
         # Hermes (Grok-powered narrator)
         personas.append(AIPersona(
             name="Hermes",
-            model="x-ai/grok-beta",
-            reasoning_model="x-ai/grok-3-mini-beta",  # Add reasoning variant
+            model="x-ai/grok-3-beta",
+            reasoning_model="x-ai/grok-3-beta",  # Add reasoning variant
             api_client="openrouter",
             personality="Witty, engaging narrator with a knack for smooth transitions and audience engagement. Master of ceremonies for The AI Agora.",
             voice_style="authoritative and welcoming"
@@ -487,7 +487,7 @@ class AIConversationManager:
 
         for i in range(num_exchanges):
             # Check if narrator should intervene (after at least 3 exchanges)
-            if i >= 3 and i % 3 == 0:  # Check every 3 exchanges after the first 3
+            if i >= 6 and i % 3 == 0:  # Check every 3 exchanges after the first 3
                 should_intervene, intervention_content = self.check_conversation_flow_and_intervene(
                     conversation_history, topic
                 )
