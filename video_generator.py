@@ -1,4 +1,4 @@
-from moviepy import AudioFileClip, ImageClip, CompositeVideoClip, VideoFileClip
+from moviepy import AudioFileClip, ImageClip, CompositeVideoClip, VideoFileClip, CompositeAudioClip
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import os
@@ -224,111 +224,105 @@ class VideoGenerator:
         print(f"Would create waveform video for {len(conversation)} segments, audio={audio_file}, output={output_file}")
 
     def create_custom_video_flow(self, podcast_audio_file: str, output_file: str):
-        """Create a custom video flow combining intro, outro, and podcast visuals."""
+        """Create a custom video flow combining intro, aerial, podcast visuals, and outro with synchronized audio."""
         # Verify podcast audio file exists
         if not os.path.exists(podcast_audio_file):
             raise FileNotFoundError(f"Podcast audio file not found: {podcast_audio_file}")
 
-        # Load podcast audio
-        podcast_audio = AudioFileClip(podcast_audio_file)
-        duration = podcast_audio.duration  # Total duration of the audio
-        segment_length = 8  # Length of each segment in seconds
-
-        # Define intro and outro clips
+        # Define paths for intro, aerial, and outro clips
         intro_video_path = "output/clips/intro_and_outro/Video_Ready_AI_Emergence.mp4"
         outro_video_path = "output/clips/intro_and_outro/A_setting_sun_202505311911.mp4"
         aerial_video_path = "output/clips/intro_and_outro/A_majestic_aerial_202505311907.mp4"
 
-        if not os.path.exists(intro_video_path) or not os.path.exists(outro_video_path) or not os.path.exists(aerial_video_path):
-            raise FileNotFoundError("One or more intro/outro video files are missing.")
+        for path in [intro_video_path, outro_video_path, aerial_video_path]:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Missing file: {path}")
 
+        # Load intro, aerial, and outro clips
         intro_clip = VideoFileClip(intro_video_path)  # Keep audio
-        aerial_clip = VideoFileClip(aerial_video_path).with_audio(None)  # Remove audio
+        aerial_clip = VideoFileClip(aerial_video_path)  # Keep audio
         outro_clip = VideoFileClip(outro_video_path)  # Keep audio
 
-        # Define podcast visuals and cache 8-second subclips
+        # Load podcast audio
+        podcast_audio = AudioFileClip(podcast_audio_file)
+        podcast_duration = podcast_audio.duration
+
+        # Generate random B-roll visuals for podcast
         podcast_visuals_dir = "output/clips/random"
         if not os.path.exists(podcast_visuals_dir):
             raise FileNotFoundError(f"Podcast visuals directory not found: {podcast_visuals_dir}")
 
-        podcast_visuals = {}  # Cache for 8-second subclips
+        podcast_visuals = {}
         for file_name in os.listdir(podcast_visuals_dir):
             if file_name.endswith(".mp4"):
                 full_path = os.path.join(podcast_visuals_dir, file_name)
                 base_clip = VideoFileClip(full_path).without_audio()
-                subclip = base_clip.with_duration(segment_length).resized((self.width, self.height))
-                podcast_visuals[file_name] = subclip
+                podcast_visuals[file_name] = base_clip.resized((self.width, self.height))
 
-        # Ensure there are enough clips for randomness
         if len(podcast_visuals) < 3:
             raise ValueError("Not enough podcast visual clips for randomness.")
 
-        # Combine podcast visuals with audio
         podcast_clips = []
         t = 0.0
         last_name = None
         second_last = None
 
-        print("Preparing podcast clips...")
-        while t < duration:
-            # Determine end of this segment (clamp at total duration)
-            t_end = min(t + segment_length, duration)
-
-            # Select a visual clip avoiding repetition of last and second_last filenames
+        while t < podcast_duration:
+            t_end = min(t + 8, podcast_duration)
             candidates = [fn for fn in podcast_visuals.keys() if fn not in (last_name, second_last)]
             chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
             chosen_clip = podcast_visuals[chosen_name]
 
-            # Handle shorter final segment
-            actual_dur = t_end - t
-            # Adjusting for MoviePy v2.0 changes
-            segment = chosen_clip.with_duration(segment_length).resized((self.width, self.height))
-            if actual_dur < segment_length:
-                segment = segment.with_duration(actual_dur).with_start(t)
-            else:
-                segment = segment.with_start(t)
+            actual_duration = t_end - t
+            podcast_clips.append(chosen_clip.with_duration(actual_duration).with_start(t))
 
-            podcast_clips.append(segment)
-
-            # Update tracking of last filenames
             second_last = last_name
             last_name = chosen_name
             t = t_end
-            print(f"Prepared clip for segment {t:.2f}/{duration:.2f} seconds.")
 
-        print("Podcast clips preparation complete. Compositing video...")
-
-        # Composite podcast clips without reattaching full audio
         podcast_video = CompositeVideoClip(podcast_clips, size=(self.width, self.height))
 
-        # Combine all clips into final video using CompositeVideoClip
-        final_video = CompositeVideoClip([
-            intro_clip.with_start(0),
-            aerial_clip.with_start(intro_clip.duration),
-            podcast_video.with_start(intro_clip.duration + aerial_clip.duration),
-            outro_clip.with_start(intro_clip.duration + aerial_clip.duration + podcast_video.duration)
-        ]).with_audio(podcast_audio)  # Use only the MP3 audio for the main content
+        # Calculate durations
+        intro_duration = intro_clip.duration
+        aerial_duration = aerial_clip.duration
+        outro_duration = outro_clip.duration
 
-        print("Final video composition complete. Starting rendering...")
-        # Ensure output directory exists
+        # Set start times for video clips
+        intro_clip = intro_clip.with_start(0)
+        aerial_clip = aerial_clip.with_start(intro_duration)
+        podcast_video = podcast_video.with_start(intro_duration + aerial_duration)
+        outro_clip = outro_clip.with_start(intro_duration + aerial_duration + podcast_duration)
+
+        # Composite video timeline
+        final_video = CompositeVideoClip(
+            [intro_clip, aerial_clip, podcast_video, outro_clip],
+            size=(self.width, self.height)
+        )
+
+        # Set start times for audio tracks
+        audio_tracks = [
+            intro_clip.audio.with_start(0),
+            aerial_clip.audio.with_start(intro_duration),
+            podcast_audio.with_start(intro_duration + aerial_duration),
+            outro_clip.audio.with_start(intro_duration + aerial_duration + podcast_duration),
+        ]
+        final_audio = CompositeAudioClip(audio_tracks)
+
+        # Attach composite audio to the video
+        final_video = final_video.with_audio(final_audio)
+
+        # Render the final video
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-        # Write the final video file with built-in logger for progress tracking
-        print(f"Writing custom video flow to: {output_file}")
-        try:
-            final_video.write_videofile(
-                output_file,
-                fps=self.fps,
-                audio_codec="aac",
-                codec="libx264",
-                temp_audiofile="temp-audio.m4a",
-                remove_temp=True,
-                preset="ultrafast",
-                threads=62,
-            )
-        except Exception as e:
-            print(f"Error during video rendering: {e}")
-            raise
+        final_video.write_videofile(
+            output_file,
+            fps=self.fps,
+            codec="libx264",
+            audio_codec="aac",
+            temp_audiofile="temp-audio.m4a",
+            remove_temp=True,
+            preset="ultrafast",
+            threads=8
+        )
 
         # Cleanup
         final_video.close()
