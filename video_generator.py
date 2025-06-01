@@ -1,4 +1,5 @@
 from moviepy import AudioFileClip, ImageClip, CompositeVideoClip, VideoFileClip, CompositeAudioClip
+from moviepy import vfx
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import os
@@ -6,7 +7,7 @@ import random
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 1080, height: int = 720, fps: int = 30):
+    def __init__(self, width: int = 640, height: int = 360, fps: int = 12):
         self.width  = width
         self.height = height
         self.fps    = fps
@@ -262,53 +263,89 @@ class VideoGenerator:
         if len(podcast_visuals) < 3:
             raise ValueError("Not enough podcast visual clips for randomness.")
 
+        # Adjust podcast clips for true crossfade
+        fade_dur = 0.5
+        seg_len = 8.0
         podcast_clips = []
+
         t = 0.0
-        last_name = None
-        second_last = None
+        last_name = second_last = None
+        prev_segment = None
+        prev_start = None
+        prev_end = None
 
         while t < podcast_duration:
-            t_end = min(t + 8, podcast_duration)
-            candidates = [fn for fn in podcast_visuals.keys() if fn not in (last_name, second_last)]
-            chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
-            chosen_clip = podcast_visuals[chosen_name]
+            t_end = min(t + seg_len, podcast_duration)
+            actual_dur = t_end - t
 
-            actual_duration = t_end - t
-            podcast_clips.append(chosen_clip.with_duration(actual_duration).with_start(t))
+            # Pick a new B-roll clip that isn’t one of the last two
+            candidates = [name for name in podcast_visuals if name not in (last_name, second_last)]
+            chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
+            base = podcast_visuals[chosen_name]
+
+            # Take exactly actual_dur from the front of this base clip
+            cur_segment = base.subclip(0, actual_dur)
+
+            if prev_segment is None:
+                # First segment: no fade-in, just add it at t=0
+                first = cur_segment.with_start(0)
+                podcast_clips.append(first)
+                prev_segment = cur_segment
+                prev_start = 0.0
+                prev_end = actual_dur
+            else:
+                # Fade out the last fade_dur of prev_segment
+                A_faded = prev_segment.fx(vfx.fadeout, fade_dur).with_start(prev_start)
+
+                # Fade in the first fade_dur of cur_segment, overlapping prev_segment's last fade_dur
+                overlap_start = prev_end - fade_dur
+                B_faded = cur_segment.fx(vfx.fadein, fade_dur).with_start(overlap_start)
+
+                podcast_clips.append(A_faded)
+                podcast_clips.append(B_faded)
+
+                prev_segment = cur_segment
+                prev_start = overlap_start
+                prev_end = overlap_start + actual_dur  # Corrected timing mistake
 
             second_last = last_name
             last_name = chosen_name
             t = t_end
 
+        # Fade out the last segment if no next segment exists
+        if prev_segment is not None:
+            tail = prev_segment.fx(vfx.fadeout, fade_dur).with_start(prev_start)
+            podcast_clips.append(tail)
+
         podcast_video = CompositeVideoClip(podcast_clips, size=(self.width, self.height))
 
         # Calculate durations
-        intro_duration = intro_clip.duration
-        aerial_duration = aerial_clip.duration
-        outro_duration = outro_clip.duration
+        intro_dur = intro_clip.duration
+        aerial_dur = aerial_clip.duration
+        podcast_dur = podcast_video.duration
+        outro_dur = outro_clip.duration
 
-        # Set start times for video clips
-        intro_clip = intro_clip.with_start(0)
-        aerial_clip = aerial_clip.with_start(intro_duration)
-        podcast_video = podcast_video.with_start(intro_duration + aerial_duration)
-        outro_clip = outro_clip.with_start(intro_duration + aerial_duration + podcast_duration)
+        # Apply crossfade between intro, aerial, podcast, and outro
+        intro_faded = intro_clip.fx(vfx.fadeout, fade_dur).with_start(0)
+        aerial_faded = aerial_clip.fx(vfx.fadein, fade_dur).with_start(intro_dur - fade_dur)
+        podcast_start = intro_dur + aerial_dur - fade_dur
+        podcast_faded = podcast_video.fx(vfx.fadein, fade_dur).fx(vfx.fadeout, fade_dur).with_start(podcast_start)
+        outro_start = intro_dur + aerial_dur + podcast_dur - fade_dur
+        outro_faded = outro_clip.fx(vfx.fadein, fade_dur).with_start(outro_start)
 
-        # Composite video timeline
         final_video = CompositeVideoClip(
-            [intro_clip, aerial_clip, podcast_video, outro_clip],
+            [intro_faded, aerial_faded, podcast_faded, outro_faded],
             size=(self.width, self.height)
         )
 
-        # Set start times for audio tracks
+        # Set audio tracks with proper timing
         audio_tracks = [
             intro_clip.audio.with_start(0),
-            aerial_clip.audio.with_start(intro_duration),
-            podcast_audio.with_start(intro_duration + aerial_duration),
-            outro_clip.audio.with_start(intro_duration + aerial_duration + podcast_duration),
+            aerial_clip.audio.with_start(intro_dur - fade_dur),
+            podcast_audio.with_start(podcast_start),
+            outro_clip.audio.with_start(outro_start)
         ]
         final_audio = CompositeAudioClip(audio_tracks)
-
-        # Attach composite audio to the video
         final_video = final_video.with_audio(final_audio)
 
         # Render the final video
