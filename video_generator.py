@@ -7,7 +7,7 @@ import random
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 640, height: int = 360, fps: int = 12):
+    def __init__(self, width: int = 256, height: int = 144, fps: int = 6):
         self.width  = width
         self.height = height
         self.fps    = fps
@@ -266,6 +266,7 @@ class VideoGenerator:
         # Adjust podcast clips for true crossfade
         fade_dur = 0.5
         seg_len = 8.0
+        step = seg_len - fade_dur
         podcast_clips = []
 
         t = 0.0
@@ -275,7 +276,7 @@ class VideoGenerator:
         prev_end = None
 
         while t < podcast_duration:
-            t_end = min(t + seg_len, podcast_duration)
+            t_end = min(t + step, podcast_duration)
             actual_dur = t_end - t
 
             # Pick a new B-roll clip that isn’t one of the last two
@@ -327,9 +328,9 @@ class VideoGenerator:
 
         # Apply crossfade between intro, aerial, podcast, and outro
         intro_faded = intro_clip.with_effects([vfx.FadeOut(fade_dur)]).with_start(0)
-        aerial_faded = aerial_clip.with_effects([vfx.FadeIn(fade_dur)]).with_start(intro_dur - fade_dur)
+        aerial_faded = aerial_clip.with_start(intro_dur - fade_dur)
         podcast_start = intro_dur + aerial_dur - fade_dur
-        podcast_faded = podcast_video.with_effects([vfx.FadeIn(fade_dur)]).with_effects([vfx.FadeOut(fade_dur)]).with_start(podcast_start)
+        podcast_faded = podcast_video.with_effects([vfx.FadeOut(fade_dur)]).with_start(podcast_start)
         outro_start = intro_dur + aerial_dur + podcast_dur - fade_dur
         outro_faded = outro_clip.with_effects([vfx.FadeIn(fade_dur)]).with_start(outro_start)
 
