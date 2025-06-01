@@ -287,20 +287,15 @@ class VideoGenerator:
 
             if prev_segment is None:
                 # First segment: no fade-in, just add it at t=0
-                first = cur_segment.with_start(0)
+                first = cur_segment.with_effects([vfx.FadeOut(fade_dur)]).with_start(0)
                 podcast_clips.append(first)
                 prev_segment = cur_segment
                 prev_start = 0.0
                 prev_end = seg_len  # Correctly set prev_end to seg_len
             else:
-                # Fade out the last fade_dur of prev_segment
-                A_faded = prev_segment.with_effects([vfx.FadeOut(fade_dur)]).with_start(prev_start)
-
-                # Fade in the first fade_dur of cur_segment, overlapping prev_segment's last fade_dur
                 overlap_start = prev_end - fade_dur
-                B_faded = cur_segment.with_effects([vfx.FadeIn(fade_dur)]).with_start(overlap_start)
+                B_faded = cur_segment.with_effects([vfx.FadeIn(fade_dur)], [vfx.FadeOut(fade_dur)]).with_start(overlap_start)
 
-                podcast_clips.append(A_faded)
                 podcast_clips.append(B_faded)
 
                 prev_segment = cur_segment
