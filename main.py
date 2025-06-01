@@ -47,11 +47,16 @@ def main():
         type=str,
         help="Path to an existing MP3 file to generate a video from"
     )
+    parser.add_argument(
+        "--json-file",
+        type=str,
+        help="Path to a JSON conversation file to generate audio from"
+    )
     args = parser.parse_args()
 
-    # Ensure either topic or MP3 file is provided
-    if not args.topic and not args.mp3_file:
-        print("Error: You must provide either a topic or an MP3 file.")
+    # Ensure either topic, MP3 file, or JSON file is provided
+    if not args.topic and not args.mp3_file and not args.json_file:
+        print("Error: You must provide either a topic, an MP3 file, or a JSON file.")
         parser.print_help()
         return
 
@@ -86,6 +91,62 @@ def main():
         video_file = f"output/conversation_video_{timestamp}.mp4"
         video_generator.create_custom_video_flow(args.mp3_file, video_file)
         print(f"Video successfully created: {video_file}")
+        return
+    
+    # Check if JSON file is provided
+    if args.json_file:
+        if not os.path.exists(args.json_file):
+            print(f"Error: Specified JSON file does not exist: {args.json_file}")
+            return
+
+        print("Loading conversation from JSON file...")
+        try:
+            with open(args.json_file, 'r') as f:
+                conversation = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error reading JSON file: {e}")
+            return
+
+        print("Initializing Audio Generator...")
+        audio_generator = AudioGenerator()
+
+        # Generate audio from JSON conversation
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        audio_segments = []
+        
+        for i, turn in enumerate(conversation):
+            print(f"Generating audio for {turn['speaker']}...")
+            
+            audio_file = f"temp_audio/audio_{timestamp}_{i:02d}_{turn['speaker'].lower()}.mp3"
+            
+            audio = audio_generator.generate_audio_for_speaker(
+                turn['content'],
+                turn['speaker'],
+                turn['voice_style']
+            )
+            
+            if audio is not None:
+                audio_segments.append(audio)
+                audio_generator.save_audio(audio, audio_file)
+            else:
+                print(f"Skipping audio for {turn['speaker']} due to generation error")
+        
+        # Combine all audio segments
+        if audio_segments:
+            combined_audio = audio_segments[0]
+            for segment in audio_segments[1:]:
+                combined_audio += segment
+            
+            combined_audio_file = f"output/full_conversation_{timestamp}.mp3"
+            audio_generator.save_audio(combined_audio, combined_audio_file, is_final=True)
+            print(f"Audio file generated: {combined_audio_file}")
+            
+            # Clean up temporary audio files
+            print("\nCleaning up temporary files...")
+            audio_generator.cleanup_temp_files()
+        else:
+            print("\nNo audio was successfully generated")
+        
         return
     
     print("\nInitializing Audio Generator...")

@@ -25,6 +25,7 @@ class AIConversationManager:
         if not self.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY environment variable is required")
         self.personas = self._initialize_personas()
+        self.last_narrator_intervention = None  # Track last narrator intervention
 
         self.shared_research_summary = self._load_deep_research_summary(
             filepath="ep1_dr.txt"
@@ -125,7 +126,93 @@ class AIConversationManager:
                     print(f"All retries failed for {context}. Exiting program.")
                     sys.exit(1)
 
-    def check_conversation_flow_and_intervene(self, conversation_history: List[str], topic: str) -> Tuple[bool, str]:
+    def _validate_generated_text(self, text: str, context: str, speaker_name: str = None) -> Tuple[bool, str]:
+        """
+        Use GPT-4.1 to validate generated text for errors and glitches.
+        Returns (is_valid: bool, explanation: str)
+        """
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json"
+        }
+                
+        system_message = (
+            "You are a text quality validator. Check if the given text has any of these issues:\n Only flag an issue if you are over 75 percent sure it is a problem.\n"
+            "1. Cuts off mid-sentence\n"
+            "2. Contains nonsensical phrases or broken grammar\n"
+            "3. Contains unexpected characters (e.g., stray asterisks, stutters, or fragments\n"
+            "4. Repeats the speaker name at the beginning (like 'Claude: Claude: ')\n"
+            "5. Has formatting artifacts or repeated phrases\n"
+            "6. Contains any other glitches or errors that would disrupt the flow of a podcast conversation\n"
+            "7. Refers to itself or the other AIs as being humans, or uses 'you', 'we', 'us', 'ourselves' etc. when it's speaking about humans. This only applies to literal and factually incorrect identification - anthropomorphizing the AIs is completely fine and should not be flagged.\n"
+            "Respond with 'VALID' if the text is good, or 'INVALID: [reason]' if there are issues."
+        )
+        
+        user_message = f"Text to validate:\n{text}"
+        
+        data = {
+            "model": "openai/gpt-4.1",
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            "max_tokens": 150,
+            "temperature": 0.2
+        }
+        
+        try:
+            validation_result = self._make_api_request_with_retry(
+                url, headers, data, "text validation"
+            )
+            
+            is_valid = validation_result.strip().upper().startswith("VALID")
+            explanation = validation_result.strip()
+            
+            return is_valid, explanation
+            
+        except Exception as e:
+            print(f"Validation error: {e}. Assuming text is valid.")
+            return True, "Validation failed, assuming valid"
+
+    def _generate_with_validation(self, generation_func, context: str, speaker_name: str = None, max_retries: int = 3):
+        """
+        Wrapper function that generates text and validates it, retrying if validation fails.
+        """
+        for attempt in range(max_retries):
+            try:
+                generated_text = generation_func()
+
+                print(speaker_name,": ", generated_text)
+                
+                # Validate the generated text
+                is_valid, explanation = self._validate_generated_text(
+                    generated_text, speaker_name
+                )
+                
+                if is_valid:
+                    if attempt > 0:
+                        print(f"✓ Text validated successfully after {attempt + 1} attempts")
+                    return generated_text
+                else:
+                    print(f"✗ Validation failed (attempt {attempt + 1}): {explanation}")
+                    if attempt == max_retries - 1:
+                        print("Max retries reached, using last generated text despite validation failure")
+                        return generated_text
+                    else:
+                        print("Retrying text generation...")
+                        continue
+                        
+            except Exception as e:
+                print(f"Error in generation attempt {attempt + 1}: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                continue
+        
+        # Should not reach here, but fallback
+        return generation_func()
+
+    def check_conversation_flow_and_intervene(self, conversation_history: List[str], topic: str, next_speaker) -> Tuple[bool, str]:
         """
         Use Grok reasoning model to analyze conversation flow and decide if narrator should intervene.
         Returns (should_intervene: bool, intervention_content: str)
@@ -222,71 +309,87 @@ class AIConversationManager:
         )
         
         # Step 3: Generate narrator intervention using main Grok model
-        intervention_system_message = (
-            "You are Hermes, the narrator of 'The AI Agora'. Your current job is to smoothly intervene in the conversationby "
-            "introducing new research-backed angles or perspectives. Be engaging and natural - "
-            "acknowledge what's been discussed, then pivot to the new angle. Keep it under 200 words."
+        def _generate_intervention():
+            intervention_system_message = (
+                "You are Hermes, the narrator of 'The AI Agora'. Your current job is to smoothly intervene in the conversationby "
+                "introducing new research-backed angles or perspectives. Be engaging and natural - "
+                "acknowledge what's been discussed, then pivot to the new angle. Keep it under 200 words."
+            )
+            
+            intervention_user_message = (
+                f"The conversation is about: {topic}. Here's what's been "
+                f"happening recently:\n{recent_conversation}\n\n"
+                f"Here are fresh research-backed relevant to the discussion:\n{research_points}\n\n"
+                "Create a smooth intervention that acknowledges the current discussion and pivots "
+                f"to a new angle based on the research points. End by asking {next_speaker} to explore this new direction."
+            )
+            
+            intervention_data = {
+                "model": narrator.model,
+                "messages": [
+                    {"role": "system", "content": intervention_system_message},
+                    {"role": "user", "content": intervention_user_message}
+                ],
+                "max_tokens": 350,
+                "temperature": 0.7
+            }
+            
+            return self._make_api_request_with_retry(
+                url, headers, intervention_data, "narrator intervention"
+            )
+        
+        intervention_content = self._generate_with_validation(
+            _generate_intervention,
+            f"narrator intervention for topic: {topic}",
+            "Hermes"
         )
         
-        intervention_user_message = (
-            f"The conversation is about: {topic}. Here's what's been "
-            f"happening recently:\n{recent_conversation}\n\n"
-            f"Here are fresh research-backed relevant to the discussion:\n{research_points}\n\n"
-            "Create a smooth intervention that acknowledges the current discussion and pivots "
-            "to a new angle based on the research points. End by asking one of the participants to explore this new direction."
-        )
-        
-        intervention_data = {
-            "model": narrator.model,
-            "messages": [
-                {"role": "system", "content": intervention_system_message},
-                {"role": "user", "content": intervention_user_message}
-            ],
-            "max_tokens": 350,
-            "temperature": 0.7
-        }
-        
-        intervention_content = self._make_api_request_with_retry(
-            url, headers, intervention_data, "narrator intervention"
-        )
+        self.last_narrator_intervention = intervention_content  # Store the intervention
         
         return True, intervention_content
 
     def generate_narrator_transition(self, context: str, transition_type: str = "general", participants: List[str] = None, next_topic: str = None, conversation_history: str = None) -> str:
         """Generate dynamic narrator transitions using Hermes (Grok-powered)"""
-        narrator = self.get_narrator_persona()
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.openrouter_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        participant_info = f" Our participants today are {' and '.join(participants)}." if participants else ""
-        
-        conclusion_prompt = f"Create a thoughtful conclusion for the discussion about: {context}. Keep it under 100 words. Here is the discussion so far: {conversation_history} Reference the key insights shared, thank the participants, and invite listeners back."
-        if next_topic:
-            conclusion_prompt += f" Also, tease the topic for next week's episode: {next_topic}."
+        def _generate():
+            narrator = self.get_narrator_persona()
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            participant_info = f" Our participants today are {' and '.join(participants)}." if participants else ""
+            
+            conclusion_prompt = f"Create a thoughtful conclusion for the discussion about: {context}. Keep it under 100 words. Here is the discussion so far: {conversation_history} Reference the key insights shared, thank the participants, and invite listeners back."
+            if next_topic:
+                conclusion_prompt += f" Also, tease the topic for next week's episode: {next_topic}."
 
-        prompts = {
-            "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}.{participant_info} Make it feel fresh and captivating.",
-            "topic_transition": f"Create a smooth transition from introductions to the main topic: {context}. {participant_info} Here's the conversation so far: {conversation_history} Keep your transition natural and engaging. End by asking one of the participants to start the discussion.",
-            "conclusion": conclusion_prompt
-        }
+            prompts = {
+                "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}.{participant_info} Make it feel fresh and captivating.",
+                "topic_transition": f"Create a smooth transition from introductions to the main topic: {context}. {participant_info} Here's the conversation so far: {conversation_history} Keep your transition natural and engaging. End by asking one of the participants to start the discussion.",
+                "conclusion": conclusion_prompt
+            }
+            
+            system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep responses under 100 words."
+            user_message = prompts.get(transition_type, f"Create an engaging transition for the topic: {context} Here's the conversation so far: {conversation_history}")
+            
+            data = {
+                "model": narrator.model,
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                "max_tokens": 250,
+                "temperature": 0.8
+            }
+            
+            return self._make_api_request_with_retry(url, headers, data, f"narrator transition ({transition_type})")
         
-        system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don’t include internal notes or developer comments. Keep responses under 100 words."
-        user_message = prompts.get(transition_type, f"Create an engaging transition for the topic: {context} Here's the conversation so far: {conversation_history}")
-        
-        data = {
-            "model": narrator.model,
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ],
-            "max_tokens": 250,
-            "temperature": 0.8
-        }
-        
-        return self._make_api_request_with_retry(url, headers, data, f"narrator transition ({transition_type})")
+        return self._generate_with_validation(
+            _generate, 
+            f"narrator {transition_type} transition for topic: {context}",
+            "Hermes"
+        )
 
     def generate_reasoning_summary(self, persona: AIPersona, topic: str, stance: str = None) -> str:
         """Generate a reasoning summary for a persona before the conversation begins"""
@@ -331,80 +434,100 @@ class AIConversationManager:
         stance: str = None
     ) -> str:
         """Get response from a specific AI persona via OpenRouter, optionally with a fierce stance."""
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.openrouter_api_key}",
-            "Content-Type": "application/json"
-        }
+        def _generate():
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json"
+            }
 
-        # Base system message
-        system_message_1 = (
-            f"You are the AI {persona.name}. {persona.personality}. Do not start talking as though you are a human. Your conversation partners are also AIs. Keep that in mind and always talk to them as AIs, not humans."
-            "Keep responses conversational and under 300 words. Only give spoken dialogue—no physical or nonverbal descriptions. Don’t include internal notes or developer comments. Focus on being engaging and entertaining for a podcast audience."
-            "If you reference any named thinker, theory, or technical term, immeditely follow with a brief (1-4 sentence) summary of who or what that is and why it matters aimed for a general audience."
-            "If you feel the conversation is going in circles, pivot to a new angle or dimension (ethical, philosophical, social, emotional, technical, etc.) to keep it engaging."
-            "Do NOT reveal your internal reasoning steps—only speak the polished dialogue."
-        )
-        
-        # Add reasoning context
-        if reasoning_summary:
-            system_message_2 = f"\n\nYour reasoning preparation: {reasoning_summary}\n\nUse these insights to inform your responses. Cite evidence and arguments from here, but speak naturally and conversationally."
-
-        # If debate_mode, inject a stance
-        if stance:
-            system_message_1 += (
-                f" You are firmly {stance.upper()} the topic and should challenge your opponent directly."
+            # Base system message
+            system_message_1 = (
+                f"You are the AI {persona.name}. {persona.personality}. Do not start talking as though you are a human. Your conversation partners are also AIs. Keep that in mind and always refer to them and yourself as AIs, not humans."
+                "Keep responses conversational and under 300 words. Make sure your responses are at a level easily understandable for the average college student interested in the topic. Inject humor, wit, and charm into your responses when appropriate. "
+                "Only give spoken dialogue—no physical or nonverbal descriptions. Don't include internal notes or developer comments. Do NOT prefix your name. Focus on being engaging and entertaining for a podcast audience."
+                "If you reference any named thinker, theory, technical term, Computer Science/math concept, or historical event, immeditely follow with a brief (1-4 sentence) summary of who or what that is and why it matters aimed for a general audience."
+                "If you feel the conversation is going in circles, pivot to a new angle or dimension (ethical, philosophical, social, emotional, technical, etc.) to keep it engaging."
+                "Do NOT reveal your internal reasoning steps—only speak the polished dialogue."
             )
+            
+            # Add reasoning context
+            if reasoning_summary:
+                system_message_2 = f"\n\nYour reasoning preparation: {reasoning_summary}\n\nUse these insights to inform your responses. Cite evidence and arguments from here, but speak naturally and conversationally."
 
-        user_message = f"Conversation history: {conversation_history}\n\nRespond to: {prompt}"
+            # If debate_mode, inject a stance
+            if stance:
+                system_message_1 += (
+                    f" You are firmly {stance.upper()} the topic and should challenge your opponent directly."
+                )
+            
+            # Include last narrator intervention if it exists
+            if self.last_narrator_intervention:
+                user_message = f"Conversation history: {conversation_history}\n\nRespond to the conversation with a focus on {self.last_narrator_intervention} and {conversation_history[-1]}"
+            
+            else:
+                user_message = f"Conversation history: {conversation_history}\n\nRespond to the conversation with a focus on {prompt} and {conversation_history[-1]}"
 
-        max_tokens = 750 if persona.name in ["Gemini", "Claude"] else 600
+            max_tokens = 750 if persona.name in ["Gemini", "Claude"] else 600
 
-        messages = [
-            {"role": "system", "content": system_message_1},
-        ]
+            messages = [
+                {"role": "system", "content": system_message_1},
+            ]
 
-        if reasoning_summary:
-            messages.append({"role": "system", "content": system_message_2})
+            if reasoning_summary:
+                messages.append({"role": "system", "content": system_message_2})
+            
+            messages.append({"role": "user", "content": user_message})
+            
+
+            data = {
+                "model": persona.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.8 if stance else 0.7
+            }
+
+            return self._make_api_request_with_retry(url, headers, data, f"response from {persona.name}")
         
-        messages.append({"role": "user", "content": user_message})
-        
-
-        data = {
-            "model": persona.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": 0.8 if stance else 0.7
-        }
-
-        return self._make_api_request_with_retry(url, headers, data, f"response from {persona.name}")
+        return self._generate_with_validation(
+            _generate,
+            f"conversation response from {persona.name}",
+            persona.name
+        )
     
     def get_ai_introduction(self, persona: AIPersona, conversation_history, reasoning_summary: str = "") -> str:
         """Get a charming/funny introduction from an AI persona"""
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.openrouter_api_key}",
-            "Content-Type": "application/json"
-        }
+        def _generate():
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            system_message = f"You are the AI {persona.name}. {persona.personality}. You are on the AI Agora Podcast, here is what has happened so far: {conversation_history}. Introduce yourself in a charming, witty, and memorable way that reflects your personality. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only your spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep it under 50 words (but don't cut off mid-sentence) and make it engaging for listeners."
+            
+            if reasoning_summary:
+                system_message += f" You have prepared thoughts on the topic: {reasoning_summary}"
+            
+            user_message = "Please introduce yourself to the audience in your characteristic style."
+            
+            data = {
+                "model": persona.model,
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                "max_tokens": 150,
+                "temperature": 0.8
+            }
+            
+            return self._make_api_request_with_retry(url, headers, data, f"introduction from {persona.name}")
         
-        system_message = f"You are the AI {persona.name}. {persona.personality}. You are on the AI Agora Podcast, here is what has happened so far: {conversation_history}. Introduce yourself in a charming, witty, and memorable way that reflects your personality. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only your spoken words. Don’t include internal notes or developer comments. Keep it under 50 words (but don't cut off mid-sentence) and make it engaging for listeners."
-        
-        if reasoning_summary:
-            system_message += f" You have prepared thoughts on the topic: {reasoning_summary}"
-        
-        user_message = "Please introduce yourself to the audience in your characteristic style."
-        
-        data = {
-            "model": persona.model,
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message}
-            ],
-            "max_tokens": 150,
-            "temperature": 0.8
-        }
-        
-        return self._make_api_request_with_retry(url, headers, data, f"introduction from {persona.name}")
+        return self._generate_with_validation(
+            _generate,
+            f"introduction from {persona.name}",
+            persona.name
+        )
 
     def generate_conversation(
         self,
@@ -489,7 +612,7 @@ class AIConversationManager:
             # Check if narrator should intervene (after at least 3 exchanges)
             if i >= 6 and i % 3 == 0:  # Check every 3 exchanges after the first 3
                 should_intervene, intervention_content = self.check_conversation_flow_and_intervene(
-                    conversation_history, topic
+                    conversation_history, topic, participants[current_speaker].name
                 )
                 
                 if should_intervene:
