@@ -294,7 +294,7 @@ class VideoGenerator:
                 prev_end = seg_len  # Correctly set prev_end to seg_len
             else:
                 overlap_start = prev_end - fade_dur
-                B_faded = cur_segment.with_effects([vfx.FadeIn(fade_dur)], [vfx.FadeOut(fade_dur)]).with_start(overlap_start)
+                B_faded = cur_segment.with_effects([vfx.FadeIn(fade_dur)]).with_effects([vfx.FadeOut(fade_dur)]).with_start(overlap_start)
 
                 podcast_clips.append(B_faded)
 
