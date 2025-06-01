@@ -235,7 +235,7 @@ class VideoGenerator:
         segment_length = 8  # Length of each segment in seconds
 
         # Define intro and outro clips
-        intro_video_path = "output/clips/intro_and_outro/Video_ready_AI_Emergence.mp4"
+        intro_video_path = "output/clips/intro_and_outro/Video_Ready_AI_Emergence.mp4"
         outro_video_path = "output/clips/intro_and_outro/A_setting_sun_202505311911.mp4"
         aerial_video_path = "output/clips/intro_and_outro/A_majestic_aerial_202505311907.mp4"
 
