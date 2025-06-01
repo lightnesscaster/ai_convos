@@ -276,7 +276,6 @@ class VideoGenerator:
 
         while t < podcast_duration:
             t_end = min(t + seg_len - fade_dur, podcast_duration)
-            actual_dur = t_end - t
 
             # Pick a new B-roll clip that isn’t one of the last two
             candidates = [name for name in podcast_visuals if name not in (last_name, second_last)]
@@ -292,7 +291,7 @@ class VideoGenerator:
                 podcast_clips.append(first)
                 prev_segment = cur_segment
                 prev_start = 0.0
-                prev_end = actual_dur
+                prev_end = seg_len  # Correctly set prev_end to seg_len
             else:
                 # Fade out the last fade_dur of prev_segment
                 A_faded = prev_segment.with_effects([vfx.FadeOut(fade_dur)]).with_start(prev_start)
@@ -306,7 +305,7 @@ class VideoGenerator:
 
                 prev_segment = cur_segment
                 prev_start = overlap_start
-                prev_end = prev_start + actual_dur  # Corrected timing mistake
+                prev_end = prev_start + seg_len  # Fix timing update here
 
             second_last = last_name
             last_name = chosen_name
