@@ -282,10 +282,12 @@ class VideoGenerator:
 
             # Handle shorter final segment
             actual_dur = t_end - t
+            # Adjusting for MoviePy v2.0 changes
+            segment = chosen_clip.subclip(0, segment_length).resize((self.width, self.height))
             if actual_dur < segment_length:
-                segment = chosen_clip.set_duration(actual_dur).set_start(t)  # Use set_duration method
+                segment = segment.subclip(0, actual_dur).set_start(t)
             else:
-                segment = chosen_clip.set_start(t)
+                segment = segment.set_start(t)
 
             podcast_clips.append(segment)
 
