@@ -358,7 +358,7 @@ class VideoGenerator:
             temp_audiofile="temp-audio.m4a",
             remove_temp=True,
             preset="ultrafast",
-            threads=8
+            threads=62
         )
 
         # Cleanup
