@@ -7,7 +7,7 @@ import random
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 256, height: int = 144, fps: int = 6):
+    def __init__(self, width: int = 1080, height: int = 720, fps: int = 30):
         self.width  = width
         self.height = height
         self.fps    = fps
