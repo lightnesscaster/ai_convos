@@ -266,7 +266,6 @@ class VideoGenerator:
         # Adjust podcast clips for true crossfade
         fade_dur = 0.5
         seg_len = 8.0
-        step = seg_len - fade_dur
         podcast_clips = []
 
         t = 0.0
@@ -276,7 +275,7 @@ class VideoGenerator:
         prev_end = None
 
         while t < podcast_duration:
-            t_end = min(t + step, podcast_duration)
+            t_end = min(t + seg_len, podcast_duration)
             actual_dur = t_end - t
 
             # Pick a new B-roll clip that isn’t one of the last two
