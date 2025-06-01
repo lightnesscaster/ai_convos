@@ -6,7 +6,7 @@ import random
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 480, height: int = 360, fps: int = 12):
+    def __init__(self, width: int = 1080, height: int = 720, fps: int = 30):
         self.width  = width
         self.height = height
         self.fps    = fps
@@ -238,10 +238,10 @@ class VideoGenerator:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Missing file: {path}")
 
-        # Load intro, aerial, and outro clips
-        intro_clip = VideoFileClip(intro_video_path)  # Keep audio
-        aerial_clip = VideoFileClip(aerial_video_path)  # Keep audio
-        outro_clip = VideoFileClip(outro_video_path)  # Keep audio
+        intro_clip   = VideoFileClip(intro_video_path).resized((self.width, self.height))
+        aerial_clip  = VideoFileClip(aerial_video_path).resized((self.width, self.height))
+        outro_clip   = VideoFileClip(outro_video_path).resized((self.width, self.height))
+
 
         # Load podcast audio
         podcast_audio = AudioFileClip(podcast_audio_file)
