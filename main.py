@@ -19,7 +19,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate an AI Agora conversation"
     )
-    parser.add_argument("topic", help="Topic to discuss")
+    parser.add_argument(
+        "topic",
+        nargs="?",
+        default=None,
+        help="Topic to discuss (required unless --mp3-file is provided)"
+    )
     parser.add_argument(
         "--num-exchanges",
         type=int,
@@ -37,7 +42,18 @@ def main():
         default=None,
         help="Topic for next week's episode, to be mentioned in the conclusion"
     )
+    parser.add_argument(
+        "--mp3-file",
+        type=str,
+        help="Path to an existing MP3 file to generate a video from"
+    )
     args = parser.parse_args()
+
+    # Ensure either topic or MP3 file is provided
+    if not args.topic and not args.mp3_file:
+        print("Error: You must provide either a topic or an MP3 file.")
+        parser.print_help()
+        return
 
     # Ensure output directories exist
     os.makedirs("output", exist_ok=True)
@@ -55,6 +71,22 @@ def main():
     print(f"Found {len(conversation_manager.personas)} AI personas:")
     for persona in conversation_manager.personas:
         print(f"  - {persona.name} ({persona.voice_style})")
+    
+    # Check if MP3 file is provided
+    if args.mp3_file:
+        if not os.path.exists(args.mp3_file):
+            print(f"Error: Specified MP3 file does not exist: {args.mp3_file}")
+            return
+
+        print("Initializing Video Generator...")
+        video_generator = VideoGenerator()
+
+        # Generate video from the provided MP3 file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_file = f"output/conversation_video_{timestamp}.mp4"
+        video_generator.create_custom_video_flow(args.mp3_file, video_file)
+        print(f"Video successfully created: {video_file}")
+        return
     
     print("\nInitializing Audio Generator...")
     audio_generator = AudioGenerator()
@@ -104,32 +136,24 @@ def main():
         else:
             print(f"Skipping audio for {turn['speaker']} due to generation error")
     
-    # Only proceed with video generation if we have audio
+    # Combine all audio segments
     if audio_segments:
-        # Combine all audio segments
         combined_audio = audio_segments[0]
         for segment in audio_segments[1:]:
             combined_audio += segment
         
-        # Save combined audio to output directory (not temp_audio)
         combined_audio_file = f"output/full_conversation_{timestamp}.mp3"
         audio_generator.save_audio(combined_audio, combined_audio_file, is_final=True)
         
-        # Generate video with precise timing from individual segments
-        if combined_audio_file and os.path.exists(combined_audio_file):
-            print("\nGenerating video...")
-            video_file = f"output/conversation_video_{timestamp}.mp4"
-            video_generator.create_conversation_video(
-                conversation, 
-                combined_audio_file, 
-                video_file,
-                individual_audio_segments=audio_segments  # Pass individual segments for timing
-            )
-            print(f"Video generation complete! Saved to: {video_file}")
-            
-            # Clean up temporary audio files after video is created
-            print("\nCleaning up temporary files...")
-            audio_generator.cleanup_temp_files()
+        # Use custom video flow
+        print("\nGenerating custom video flow...")
+        video_file = f"output/conversation_video_{timestamp}.mp4"
+        video_generator.create_custom_video_flow(combined_audio_file, video_file)
+        print(f"Custom video flow complete! Saved to: {video_file}")
+        
+        # Clean up temporary audio files
+        print("\nCleaning up temporary files...")
+        audio_generator.cleanup_temp_files()
     else:
         print("\nSkipping video generation - no audio was successfully generated")
         print("To generate audio and video:")
