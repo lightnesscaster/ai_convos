@@ -256,7 +256,7 @@ class VideoGenerator:
             if file_name.endswith(".mp4"):
                 full_path = os.path.join(podcast_visuals_dir, file_name)
                 base_clip = VideoFileClip(full_path).without_audio()
-                subclip = base_clip.crop(x1=0, x2=segment_length).resize((self.width, self.height))  # Use crop method
+                subclip = base_clip.set_duration(segment_length).resize((self.width, self.height))  # Use set_duration method
                 base_clip.close()
                 podcast_visuals[file_name] = subclip
 
@@ -283,7 +283,7 @@ class VideoGenerator:
             # Handle shorter final segment
             actual_dur = t_end - t
             if actual_dur < segment_length:
-                segment = chosen_clip.crop(x1=0, x2=actual_dur).set_start(t)  # Use crop method
+                segment = chosen_clip.set_duration(actual_dur).set_start(t)  # Use set_duration method
             else:
                 segment = chosen_clip.set_start(t)
 
