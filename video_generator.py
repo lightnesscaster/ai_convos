@@ -275,7 +275,7 @@ class VideoGenerator:
         prev_end = None
 
         while t < podcast_duration:
-            t_end = min(t + seg_len, podcast_duration)
+            t_end = min(t + seg_len - fade_dur, podcast_duration)
             actual_dur = t_end - t
 
             # Pick a new B-roll clip that isn’t one of the last two
@@ -283,8 +283,8 @@ class VideoGenerator:
             chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
             base = podcast_visuals[chosen_name]
 
-            # Take exactly actual_dur from the front of this base clip
-            cur_segment = base.subclipped(0, actual_dur)
+            # Take exactly seg_len from the front of this base clip
+            cur_segment = base.subclipped(0, seg_len)
 
             if prev_segment is None:
                 # First segment: no fade-in, just add it at t=0
@@ -306,7 +306,7 @@ class VideoGenerator:
 
                 prev_segment = cur_segment
                 prev_start = overlap_start
-                prev_end = overlap_start + actual_dur  # Corrected timing mistake
+                prev_end = prev_start + actual_dur  # Corrected timing mistake
 
             second_last = last_name
             last_name = chosen_name
