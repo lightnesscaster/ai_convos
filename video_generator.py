@@ -284,7 +284,7 @@ class VideoGenerator:
             base = podcast_visuals[chosen_name]
 
             # Take exactly actual_dur from the front of this base clip
-            cur_segment = base.subclip(0, actual_dur)
+            cur_segment = base.subclipped(0, actual_dur)
 
             if prev_segment is None:
                 # First segment: no fade-in, just add it at t=0
