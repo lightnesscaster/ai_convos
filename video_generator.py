@@ -6,7 +6,7 @@ import random
 from typing import List, Dict
 
 class VideoGenerator:
-    def __init__(self, width: int = 640, height: int = 360, fps: int = 4):
+    def __init__(self, width: int = 1080, height: int = 720, fps: int = 30):
         self.width  = width
         self.height = height
         self.fps    = fps
@@ -246,47 +246,53 @@ class VideoGenerator:
         aerial_clip = VideoFileClip(aerial_video_path).with_audio(None)  # Remove audio
         outro_clip = VideoFileClip(outro_video_path)  # Keep audio
 
-        # Define podcast visuals
+        # Define podcast visuals and cache 8-second subclips
         podcast_visuals_dir = "output/clips/random"
         if not os.path.exists(podcast_visuals_dir):
             raise FileNotFoundError(f"Podcast visuals directory not found: {podcast_visuals_dir}")
 
-        podcast_visual_clips = [
-            VideoFileClip(os.path.join(podcast_visuals_dir, file_name)).with_audio(None)  # Remove audio
-            for file_name in os.listdir(podcast_visuals_dir)
-            if file_name.endswith(".mp4") and file_name != "output/clips/random/A_polished_threequarter_202505311858.mp4"
-        ]
+        podcast_visuals = {}  # Cache for 8-second subclips
+        for file_name in os.listdir(podcast_visuals_dir):
+            if file_name.endswith(".mp4"):
+                full_path = os.path.join(podcast_visuals_dir, file_name)
+                base_clip = VideoFileClip(full_path).without_audio()
+                subclip = base_clip.subclip(0, segment_length)  # Cache the first 8 seconds
+                subclip = base_clip.subclip(0, 8).resize((self.width, self.height))
+                base_clip.close()
+                podcast_visuals[file_name] = subclip
 
         # Ensure there are enough clips for randomness
-        if len(podcast_visual_clips) < 3:
+        if len(podcast_visuals) < 3:
             raise ValueError("Not enough podcast visual clips for randomness.")
-
-        debate_clip_path = os.path.join(podcast_visuals_dir, "a_polished_three_quarter.mp4")
-        debate_clip = VideoFileClip(debate_clip_path).with_audio(None) if os.path.exists(debate_clip_path) else None
 
         # Combine podcast visuals with audio
         podcast_clips = []
         t = 0.0
-        last_clip = None
-        last_last_clip = None
+        last_name = None
+        second_last = None
 
         print("Preparing podcast clips...")
         while t < duration:
             # Determine end of this segment (clamp at total duration)
             t_end = min(t + segment_length, duration)
 
-            # Select a visual clip avoiding repetition of last and last_last clips
-            available_clips = [clip for clip in podcast_visual_clips if clip != last_clip and clip != last_last_clip]
-            selected_clip = random.choice(available_clips)
+            # Select a visual clip avoiding repetition of last and second_last filenames
+            candidates = [fn for fn in podcast_visuals.keys() if fn not in (last_name, second_last)]
+            chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
+            chosen_clip = podcast_visuals[chosen_name]
 
-            # Attach visual clip without audio
-            clip = selected_clip.with_start(t).with_duration(t_end - t)
-            podcast_clips.append(clip)
+            # Handle shorter final segment
+            actual_dur = t_end - t
+            if actual_dur < segment_length:
+                segment = chosen_clip.subclip(0, actual_dur).set_start(t)
+            else:
+                segment = chosen_clip.set_start(t)
 
-            # Update tracking of last clips
-            last_last_clip = last_clip
-            last_clip = selected_clip
+            podcast_clips.append(segment)
 
+            # Update tracking of last filenames
+            second_last = last_name
+            last_name = chosen_name
             t = t_end
             print(f"Prepared clip for segment {t:.2f}/{duration:.2f} seconds.")
 
@@ -317,7 +323,8 @@ class VideoGenerator:
                 codec="libx264",
                 temp_audiofile="temp-audio.m4a",
                 remove_temp=True,
-                threads=8,
+                preset="ultrafast",
+                threads=62,
             )
         except Exception as e:
             print(f"Error during video rendering: {e}")
@@ -329,10 +336,8 @@ class VideoGenerator:
         intro_clip.close()
         aerial_clip.close()
         outro_clip.close()
-        for clip in podcast_visual_clips:
+        for clip in podcast_visuals.values():
             clip.close()
-        if debate_clip:
-            debate_clip.close()
 
         print(f"Custom video flow successfully created: {output_file}")
 
