@@ -256,8 +256,7 @@ class VideoGenerator:
             if file_name.endswith(".mp4"):
                 full_path = os.path.join(podcast_visuals_dir, file_name)
                 base_clip = VideoFileClip(full_path).without_audio()
-                subclip = base_clip.subclip(0, segment_length).resize((self.width, self.height))  # Use set_duration method
-                base_clip.close()
+                subclip = base_clip.with_duration(segment_length).resize((self.width, self.height))
                 podcast_visuals[file_name] = subclip
 
         # Ensure there are enough clips for randomness
@@ -283,9 +282,9 @@ class VideoGenerator:
             # Handle shorter final segment
             actual_dur = t_end - t
             # Adjusting for MoviePy v2.0 changes
-            segment = chosen_clip.subclip(0, segment_length).resize((self.width, self.height))
+            segment = chosen_clip.with_duration(segment_length).resize((self.width, self.height))
             if actual_dur < segment_length:
-                segment = segment.subclip(0, actual_dur).set_start(t)
+                segment = segment.with_duration(actual_dur).set_start(t)
             else:
                 segment = segment.set_start(t)
 
