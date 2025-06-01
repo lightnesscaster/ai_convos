@@ -287,14 +287,14 @@ class VideoGenerator:
 
             if prev_segment is None:
                 # First segment: no fade-in, just add it at t=0
-                first = cur_segment.with_effects([vfx.FadeOut(fade_dur)]).with_start(0)
+                first = cur_segment.with_effects([vfx.CrossFadeOut(fade_dur)]).with_start(0)
                 podcast_clips.append(first)
                 prev_segment = cur_segment
                 prev_start = 0.0
                 prev_end = seg_len  # Correctly set prev_end to seg_len
             else:
                 overlap_start = prev_end - fade_dur
-                B_faded = cur_segment.with_effects([vfx.FadeIn(fade_dur)]).with_effects([vfx.FadeOut(fade_dur)]).with_start(overlap_start)
+                B_faded = cur_segment.with_effects([vfx.CrossFadeIn(fade_dur), vfx.CrossFadeOut(fade_dur)]).with_start(overlap_start)
 
                 podcast_clips.append(B_faded)
 
@@ -306,10 +306,6 @@ class VideoGenerator:
             last_name = chosen_name
             t = t_end
 
-        # Fade out the last segment if no next segment exists
-        if prev_segment is not None:
-            tail = prev_segment.with_effects([vfx.FadeOut(fade_dur)]).with_start(prev_start)
-            podcast_clips.append(tail)
 
         podcast_video = CompositeVideoClip(podcast_clips, size=(self.width, self.height))
 
@@ -320,12 +316,12 @@ class VideoGenerator:
         outro_dur = outro_clip.duration
 
         # Apply crossfade between intro, aerial, podcast, and outro
-        intro_faded = intro_clip.with_effects([vfx.FadeOut(fade_dur)]).with_start(0)
+        intro_faded = intro_clip.with_effects([vfx.CrossFadeOut(fade_dur)]).with_start(0)
         aerial_faded = aerial_clip.with_start(intro_dur - fade_dur)
         podcast_start = intro_dur + aerial_dur - fade_dur
-        podcast_faded = podcast_video.with_effects([vfx.FadeOut(fade_dur)]).with_start(podcast_start)
-        outro_start = intro_dur + aerial_dur + podcast_dur - fade_dur
-        outro_faded = outro_clip.with_effects([vfx.FadeIn(fade_dur)]).with_start(outro_start)
+        podcast_faded = podcast_video.with_effects([vfx.CrossFadeOut(fade_dur)]).with_start(podcast_start)
+        outro_start = intro_dur + aerial_dur + podcast_dur - 2*fade_dur
+        outro_faded = outro_clip.with_effects([vfx.CrossFadeIn(fade_dur)]).with_start(outro_start)
 
         final_video = CompositeVideoClip(
             [intro_faded, aerial_faded, podcast_faded, outro_faded],
