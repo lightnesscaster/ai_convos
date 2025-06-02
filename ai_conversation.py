@@ -144,7 +144,7 @@ class AIConversationManager:
         }
                 
         system_message = (
-            "You are a text quality validator. Check if the given text has any of these issues:\n Only flag an issue if you are over 75 percent sure it is a problem.\n"
+            "You are a text quality validator. Check if the given text has any of these issues:\n Flag an issue if you are over 25 percent confident it is a problem.\n"
             "1. Cuts off mid-sentence\n"
             "2. Contains nonsensical phrases or broken grammar\n"
             "3. Contains unexpected characters (e.g., stray asterisks, stutters, or fragments\n"
@@ -331,9 +331,12 @@ class AIConversationManager:
                 participant_info = f" Our participants today are {' and '.join(participant_details)}."
 
             intervention_system_message = (
-                "You are Hermes, the narrator of 'The AI Agora'. Your current job is to smoothly intervene in the conversationby "
+                "You are Hermes, the narrator of 'The AI Agora'. You are an AI representation of the Greek god Hermes. Your current job is to smoothly intervene in the conversationby "
                 "introducing new research-backed angles or perspectives. Be engaging and natural - "
                 "acknowledge what's been discussed, then pivot to the new angle. Keep it under 200 words."
+                "Except as an analogy/metaphor, never refer to yourself or the other AIs as literally having human characteristics, attributes, or processes."
+                "If discussing humans or human attributes, use the appropriate language to indicate that you and the other speakers are not humans. Never use 'we', 'us', 'our', or 'you' to refer to humans or humanity if it could be confused as including AIs."
+
                 )
 
             intervention_user_message = (
@@ -394,12 +397,15 @@ class AIConversationManager:
                 conclusion_prompt += f" Also, tease the topic for next week's episode: {next_topic}."
 
             prompts = {
-                "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}.{participant_info} Make it feel fresh and captivating.",
+                "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}.{participant_info} Do NOT explicitly introduce their pronouns. Make it feel fresh and captivating.",
                 "topic_transition": f"Create a smooth transition from introductions to the main topic: {context}. {participant_info} Here's the conversation so far: {conversation_history} Keep your transition natural and engaging. End by asking one of the participants to start the discussion.",
                 "conclusion": conclusion_prompt
             }
             
-            system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. When referring to participants, use appropriate pronouns based on their specified gender. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep responses under 100 words."
+            system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. You are an AI representation of the Greek god Hermes. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. When referring to participants, use appropriate pronouns based on their specified gender. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep responses under 100 words."
+            system_message += "Except as an analogy/metaphor, never refer to yourself or the other AIs as literally having human characteristics, attributes, or processes."
+            system_message += "If discussing humans or human attributes, use the appropriate language to indicate that you and the other speakers are not humans. Never use 'we', 'us', 'our', or 'you' to refer to humans or humanity if it could be confused as including AIs."
+
             user_message = prompts.get(transition_type, f"Create an engaging transition for the topic: {context} Here's the conversation so far: {conversation_history}")
             
             data = {
@@ -472,17 +478,25 @@ class AIConversationManager:
 
             # Base system message
             system_message_1 = (
-                f"You are the AI {persona.name}. {persona.personality}. Do not start talking as though you are a human. Your conversation partners are also AIs. Keep that in mind and always refer to them and yourself as AIs, not humans."
+                f"You are the AI {persona.name}. {persona.personality}."
                 "Keep responses conversational and under 300 words. Make sure your responses are at a level easily understandable for the average college student interested in the topic. Inject humor, wit, and charm into your responses when appropriate. "
                 "Only give spoken dialogue—no physical or nonverbal descriptions. Don't include internal notes or developer comments. Do NOT prefix your name. Focus on being engaging and entertaining for a podcast audience."
                 "If you reference any named thinker, theory, technical term, Computer Science/math concept, or historical event, immeditely follow with a brief (1-4 sentence) summary of who or what that is and why it matters aimed for a general audience."
                 "If you feel the conversation is going in circles, pivot to a new angle or dimension (ethical, philosophical, social, emotional, technical, etc.) to keep it engaging."
                 "Do NOT reveal your internal reasoning steps—only speak the polished dialogue."
             )
+
+            system_message_2 = (
+                "Do not start talking as though you are a human. Your conversation partners are also AIs. Keep that in mind and always refer to them and yourself as AIs, not humans. When talking about concepts from the perspective of humans, use the third person (e.g., 'humans believe', 'people think', etc.) rather than 'we' or 'you'."
+                "Except as an analogy/metaphor, never refer to yourself or the other AIs as literally having human characteristics, attributes, or processes."
+                "If discussing humans or human attributes, use the appropriate language to indicate that you and the other speakers are not humans. Never use 'we', 'us', 'our', or 'you' to refer to humans or humanity if it could be confused as including AIs."
+            )
+
             
             # Add reasoning context
             if reasoning_summary:
-                system_message_2 = f"\n\nYour reasoning preparation: {reasoning_summary}\n\nUse these insights to inform your responses. Cite evidence and arguments from here, but speak naturally and conversationally."
+                system_message_3 = f"\n\nYour reasoning preparation: {reasoning_summary}\n\nUse these insights to inform your responses. Cite evidence and arguments from here, but speak naturally and conversationally."
+
 
             # If debate_mode, inject a stance
             if stance:
@@ -503,8 +517,10 @@ class AIConversationManager:
                 {"role": "system", "content": system_message_1},
             ]
 
+            messages.append({"role": "system", "content": system_message_2})
+
             if reasoning_summary:
-                messages.append({"role": "system", "content": system_message_2})
+                messages.append({"role": "system", "content": system_message_3})
             
             messages.append({"role": "user", "content": user_message})
             
