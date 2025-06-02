@@ -269,7 +269,7 @@ class VideoGenerator:
         podcast_clips = []
 
         t = 0.0
-        last_name = second_last = None
+        last_three_names = [] # Stores the names of the last three clips used
         prev_segment = None
         prev_start = None
         prev_end = None
@@ -278,9 +278,12 @@ class VideoGenerator:
             t_end = min(t + seg_len - fade_dur, podcast_duration)
             remaining_time = podcast_duration - t
 
-            # Pick a new B-roll clip that isn't one of the last two
-            candidates = [name for name in podcast_visuals if name not in (last_name, second_last)]
-            chosen_name = random.choice(candidates) if candidates else random.choice(list(podcast_visuals))
+            # Pick a new B-roll clip that isn't one of the last three
+            candidates = [name for name in podcast_visuals if name not in last_three_names]
+            if not candidates: # If all clips have been used in the last three turns, pick any
+                candidates = list(podcast_visuals.keys())
+            
+            chosen_name = random.choice(candidates)
             base = podcast_visuals[chosen_name]
 
             # For the last clip, use only the remaining time
@@ -304,8 +307,11 @@ class VideoGenerator:
                 prev_start = overlap_start
                 prev_end = prev_start + clip_duration
 
-            second_last = last_name
-            last_name = chosen_name
+            # Update the list of last three used clips
+            last_three_names.append(chosen_name)
+            if len(last_three_names) > 3:
+                last_three_names.pop(0)
+            
             t = t_end
 
 

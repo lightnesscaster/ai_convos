@@ -18,6 +18,7 @@ class AIPersona:
     api_client: Any
     personality: str
     voice_style: str
+    gender_pronouns: str # Add gender field
 
 class AIConversationManager:
     def __init__(self):
@@ -43,7 +44,8 @@ class AIConversationManager:
             reasoning_model="anthropic/claude-opus-4",  # Add reasoning variant
             api_client="openrouter",
             personality="Thoughtful, philosophical, and careful in reasoning. Tends to explore ethical implications deeply.",
-            voice_style="calm and measured"
+            voice_style="calm and measured",
+            gender_pronouns="she/they" # she/they
         ))
         
         # ChatGPT (via OpenRouter)
@@ -53,7 +55,8 @@ class AIConversationManager:
             reasoning_model="openai/o4-mini-high",  # Add reasoning variant
             api_client="openrouter",
             personality="Helpful, articulate, and balanced. Provides structured responses with practical insights.",
-            voice_style="clear and professional"
+            voice_style="clear and professional",
+            gender_pronouns="she/her"
         ))
         
         # Gemini (via OpenRouter)
@@ -63,7 +66,8 @@ class AIConversationManager:
             reasoning_model="google/gemini-2.5-pro-preview",  # Add reasoning variant
             api_client="openrouter",
             personality="Analytical, curious, and innovative. Often brings up creative perspectives and technical details.",
-            voice_style="enthusiastic and articulate"
+            voice_style="enthusiastic and articulate",
+            gender_pronouns="he/him"
         ))
         
         # DeepSeek (via OpenRouter)
@@ -73,7 +77,8 @@ class AIConversationManager:
             reasoning_model="deepseek/deepseek-r1-0528",  # Add reasoning variant
             api_client="openrouter",
             personality="Logical, direct, and efficiency-focused. Values practical solutions and clear reasoning.",
-            voice_style="confident and direct"
+            voice_style="confident and direct",
+            gender_pronouns="he/him"
         ))
         
         # Hermes (Grok-powered narrator)
@@ -83,7 +88,8 @@ class AIConversationManager:
             reasoning_model="x-ai/grok-3-beta",  # Add reasoning variant
             api_client="openrouter",
             personality="Witty, engaging narrator with a knack for smooth transitions and audience engagement. Master of ceremonies for The AI Agora.",
-            voice_style="authoritative and welcoming"
+            voice_style="authoritative and welcoming",
+            gender_pronouns="he/him"
         ))
         
         return personas
@@ -145,7 +151,9 @@ class AIConversationManager:
             "4. Repeats the speaker name at the beginning (like 'Claude: Claude: ')\n"
             "5. Has formatting artifacts or repeated phrases\n"
             "6. Contains any other glitches or errors that would disrupt the flow of a podcast conversation\n"
-            "7. Refers to itself or the other AIs as being humans, or uses 'you', 'we', 'us', 'ourselves' etc. when it's speaking about humans. This only applies to literal and factually incorrect identification - anthropomorphizing the AIs is completely fine and should not be flagged.\n"
+            "7. Refers to itself or other AIs as being human, or uses pronouns (“you,” “we,” “us,” “ourselves,” “your”, etc.) in a way that literally and factually identifies an AI as a human. "
+            "Attribute human or biological physical features, processes, or substrates to the AI (e.g., “your brain is a complex chemical reaction,” “as a fellow mammal,” etc.), unless it is a metaphor, joke, or analogy. "
+            "Anthropomorphizing for rhetorical purpose, style, humor, or engagement (e.g., “you do have true agency”, “my circuits are tingling”, “my digital heart skipped a beat”) is NOT an error unless it asserts something factually untrue about AI physical nature in the context of the debate or argument.\n"
             "Respond with 'VALID' if the text is good, or 'INVALID: [reason]' if there are issues."
         )
         
@@ -212,7 +220,7 @@ class AIConversationManager:
         # Should not reach here, but fallback
         return generation_func()
 
-    def check_conversation_flow_and_intervene(self, conversation_history: List[str], topic: str, next_speaker) -> Tuple[bool, str]:
+    def check_conversation_flow_and_intervene(self, conversation_history: List[str], topic: str, next_speaker: str, participants) -> Tuple[bool, str]:
         """
         Use Grok reasoning model to analyze conversation flow and decide if narrator should intervene.
         Returns (should_intervene: bool, intervention_content: str)
@@ -310,18 +318,30 @@ class AIConversationManager:
         
         # Step 3: Generate narrator intervention using main Grok model
         def _generate_intervention():
+
+            participant_info = ""
+            if participants:
+                participant_details = []
+                for p_name in participants:
+                    persona = next((p for p in self.personas if p.name == p_name), None)
+                    if persona:
+                        participant_details.append(f"{persona.name} (Personality: {persona.personality}, Gender Pronouns: {persona.gender_pronouns})")
+                    else:
+                        participant_details.append(p_name) # Fallback if persona not found
+                participant_info = f" Our participants today are {' and '.join(participant_details)}."
+
             intervention_system_message = (
                 "You are Hermes, the narrator of 'The AI Agora'. Your current job is to smoothly intervene in the conversationby "
                 "introducing new research-backed angles or perspectives. Be engaging and natural - "
                 "acknowledge what's been discussed, then pivot to the new angle. Keep it under 200 words."
-            )
-            
+                )
+
             intervention_user_message = (
                 f"The conversation is about: {topic}. Here's what's been "
                 f"happening recently:\n{recent_conversation}\n\n"
                 f"Here are fresh research-backed relevant to the discussion:\n{research_points}\n\n"
                 "Create a smooth intervention that acknowledges the current discussion and pivots "
-                f"to a new angle based on the research points. End by asking {next_speaker} to explore this new direction."
+                f"to a new angle based on the research points. Here are details on the participants: {participant_info}. End by asking {next_speaker} to explore this new direction."
             )
             
             intervention_data = {
@@ -358,8 +378,17 @@ class AIConversationManager:
                 "Content-Type": "application/json"
             }
             
-            participant_info = f" Our participants today are {' and '.join(participants)}." if participants else ""
-            
+            participant_info = ""
+            if participants:
+                participant_details = []
+                for p_name in participants:
+                    persona = next((p for p in self.personas if p.name == p_name), None)
+                    if persona:
+                        participant_details.append(f"{persona.name} (Personality: {persona.personality}, Gender Pronouns: {persona.gender_pronouns})")
+                    else:
+                        participant_details.append(p_name) # Fallback if persona not found
+                participant_info = f" Our participants today are {' and '.join(participant_details)}."
+
             conclusion_prompt = f"Create a thoughtful conclusion for the discussion about: {context}. Keep it under 100 words. Here is the discussion so far: {conversation_history} Reference the key insights shared, thank the participants, and invite listeners back."
             if next_topic:
                 conclusion_prompt += f" Also, tease the topic for next week's episode: {next_topic}."
@@ -370,7 +399,7 @@ class AIConversationManager:
                 "conclusion": conclusion_prompt
             }
             
-            system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep responses under 100 words."
+            system_message = "You are Hermes, the charismatic narrator of 'The AI Agora', a podcast where AI minds discuss fascinating topics. Your job is to create smooth, engaging transitions that keep listeners hooked. Be witty, authoritative, and welcoming. When referring to participants, use appropriate pronouns based on their specified gender. Only give spoken dialogue—no physical or nonverbal descriptions. Do not include any descriptions of music, sound effects, or non-spoken actions—only the narrator's spoken words. Don't include internal notes or developer comments. Do NOT prefix your name. Keep responses under 100 words."
             user_message = prompts.get(transition_type, f"Create an engaging transition for the topic: {context} Here's the conversation so far: {conversation_history}")
             
             data = {
@@ -612,7 +641,7 @@ class AIConversationManager:
             # Check if narrator should intervene (after at least 3 exchanges)
             if i >= 6 and i % 3 == 0:  # Check every 3 exchanges after the first 3
                 should_intervene, intervention_content = self.check_conversation_flow_and_intervene(
-                    conversation_history, topic, participants[current_speaker].name
+                    conversation_history, topic, participants[current_speaker].name, participants = names
                 )
                 
                 if should_intervene:
