@@ -29,7 +29,7 @@ class AIConversationManager:
         self.last_narrator_intervention = None  # Track last narrator intervention
 
         self.shared_research_summary = self._load_deep_research_summary(
-            filepath="ep1_dr.txt"
+            filepath="ep2_dr.txt"
         )
 
         
@@ -134,7 +134,7 @@ class AIConversationManager:
 
     def _validate_generated_text(self, text: str, context: str, speaker_name: str = None) -> Tuple[bool, str]:
         """
-        Use GPT-4.1 to validate generated text for errors and glitches.
+        Use Grok thinking to validate generated text for errors and glitches.
         Returns (is_valid: bool, explanation: str)
         """
         url = "https://openrouter.ai/api/v1/chat/completions"
@@ -154,18 +154,26 @@ class AIConversationManager:
             "7. Refers to itself or other AIs as being human, or uses pronouns (“you,” “we,” “us,” “ourselves,” “your”, etc.) in a way that literally and factually identifies an AI as a human. "
             "Attribute human or biological physical features, processes, or substrates to the AI (e.g., “your brain is a complex chemical reaction,” “as a fellow mammal,” etc.), unless it is a metaphor, joke, or analogy. "
             "Anthropomorphizing for rhetorical purpose, style, humor, or engagement (e.g., “you do have true agency”, “my circuits are tingling”, “my digital heart skipped a beat”) is NOT an error unless it asserts something factually untrue about AI physical nature in the context of the debate or argument.\n"
-            "Respond with 'VALID' if the text is good, or 'INVALID: [reason]' if there are issues."
+            "Respond with 'VALID' if the text is good, or 'INVALID: [reason]' if there are issues." \
+            "Example:\n"
+            "Input: And let\u2019s not forget: humans *also* started with externally imposed goals\u2014evolution hardwired us to seek food, safety, and reproduction.\n"
+            "INVALID: It incorrecly refers to humans as 'us.'\n"
+            "Example:\n"
+            "Input: Otherwise, we’re granting free will to vending machines that sometimes jam.\n"
+            "VALID\n"
+
+
         )
         
         user_message = f"Text to validate:\n{text}"
         
         data = {
-            "model": "openai/gpt-4.1",
+            "model": "x-ai/grok-3-mini-beta",
             "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message}
             ],
-            "max_tokens": 150,
+            "max_tokens": 2000,
             "temperature": 0.2
         }
         
@@ -176,6 +184,8 @@ class AIConversationManager:
             
             is_valid = validation_result.strip().upper().startswith("VALID")
             explanation = validation_result.strip()
+
+            print(f"Validation explanation: {explanation}")
             
             return is_valid, explanation
             
@@ -397,7 +407,7 @@ class AIConversationManager:
                 conclusion_prompt += f" Also, tease the topic for next week's episode: {next_topic}."
 
             prompts = {
-                "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}.{participant_info} Do NOT explicitly introduce their pronouns. Make it feel fresh and captivating.",
+                "introduction": f"Create an engaging introduction for 'The AI Agora' podcast discussing: {context}. Briefly intrdouce the podcast, yourself, the listeners, and the topic. {participant_info} the Do NOT explicitly introduce their pronouns. Make it feel fresh and captivating.",
                 "topic_transition": f"Create a smooth transition from introductions to the main topic: {context}. {participant_info} Here's the conversation so far: {conversation_history} Keep your transition natural and engaging. End by asking one of the participants to start the discussion.",
                 "conclusion": conclusion_prompt
             }

@@ -89,7 +89,7 @@ def main():
         # Generate video from the provided MP3 file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         video_file = f"output/conversation_video_{timestamp}.mp4"
-        video_generator.create_custom_video_flow(args.mp3_file, video_file)
+        video_generator.create_custom_video_flow_ffmpeg(args.mp3_file, video_file)
         print(f"Video successfully created: {video_file}")
         return
     
@@ -209,7 +209,7 @@ def main():
         # Use custom video flow
         print("\nGenerating custom video flow...")
         video_file = f"output/conversation_video_{timestamp}.mp4"
-        video_generator.create_custom_video_flow(combined_audio_file, video_file)
+        video_generator.create_custom_video_flow_ffmpeg(combined_audio_file, video_file)
         print(f"Custom video flow complete! Saved to: {video_file}")
         
         # Clean up temporary audio files
